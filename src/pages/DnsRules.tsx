@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Shield, ShieldX, Plus, Search, ToggleLeft, ToggleRight, Trash2,
   Gamepad2, MessageCircle, Video, ShoppingBag, Skull, Bug, BarChart3,
-  Mail, Pickaxe, Globe, Layers, ChevronDown, ChevronUp,
+  Mail, Pickaxe, Globe, Layers, ChevronDown, ChevronUp, RotateCcw,
 } from "lucide-react";
 import { whitelistRules, blacklistRules, categoryBlacklists, type CategoryBlacklist } from "@/lib/mock-data";
 import { motion, AnimatePresence } from "framer-motion";
@@ -91,6 +91,12 @@ export default function DnsRules() {
     setShowAdd(false);
   };
 
+  const resetToDefaults = () => {
+    setCategories(categoryBlacklists);
+    setWRules(whitelistRules);
+    setBRules(blacklistRules);
+  };
+
   const totalBlocked = categories.filter((c) => c.enabled).reduce((acc, c) => acc + c.domains.length, 0) + bRules.filter((r) => r.enabled).length;
 
   return (
@@ -122,8 +128,16 @@ export default function DnsRules() {
           <Shield className="h-4 w-4" /> Whitelist ({wRules.length})
         </button>
 
-        <div className="ml-auto text-xs text-muted-foreground font-mono">
-          {totalBlocked} domains blocked
+        <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={resetToDefaults}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Reset to defaults
+          </button>
+          <span className="text-xs text-muted-foreground font-mono">
+            {totalBlocked} domains blocked
+          </span>
         </div>
       </div>
 
