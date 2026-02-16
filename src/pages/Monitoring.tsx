@@ -1,4 +1,4 @@
-import { Cpu, HardDrive, MemoryStick, Wifi, Play, Square, RotateCcw, Server, Pause } from "lucide-react";
+import { Cpu, HardDrive, MemoryStick, Wifi, Play, Square, RotateCcw, Server, Pause, Globe, Network } from "lucide-react";
 import { useLiveServerMetrics } from "@/hooks/use-live-data";
 import { motion } from "framer-motion";
 import { useState } from "react";
@@ -101,7 +101,7 @@ export default function Monitoring() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="grid grid-cols-1 md:grid-cols-2 gap-4"
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
       >
         <div className="bg-card border border-border rounded-lg p-5">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
@@ -109,9 +109,10 @@ export default function Monitoring() {
           </h3>
           <div className="space-y-3">
             {[
+              ["Hostname", serverMetrics.hostname],
               ["Version", serverMetrics.version],
               ["OS", serverMetrics.os],
-              ["Resolver", "Unbound 1.19.0"],
+              ["Resolver", serverMetrics.resolver],
               ["DNS Port", serverMetrics.dnsPort],
               ["API Port", serverMetrics.apiPort],
             ].map(([label, value]) => (
@@ -125,7 +126,28 @@ export default function Monitoring() {
 
         <div className="bg-card border border-border rounded-lg p-5">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-            <Wifi className="h-4 w-4 text-primary" /> Network
+            <Globe className="h-4 w-4 text-primary" /> Network Addresses
+          </h3>
+          <div className="space-y-3">
+            {[
+              ["IP Address", serverMetrics.ipAddress],
+              ["Public IP", serverMetrics.publicIp],
+              ["Subnet Mask", serverMetrics.netmask],
+              ["Gateway", serverMetrics.gateway],
+              ["MAC Address", serverMetrics.macAddress],
+              ["Interface", serverMetrics.dnsInterface],
+            ].map(([label, value]) => (
+              <div key={label as string} className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">{label}</span>
+                <span className="font-mono">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-card border border-border rounded-lg p-5">
+          <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+            <Wifi className="h-4 w-4 text-primary" /> Network Traffic
           </h3>
           <div className="space-y-3">
             {[
