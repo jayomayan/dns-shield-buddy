@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Shield, ShieldX, Plus, Search, ToggleLeft, ToggleRight, Trash2,
   Gamepad2, MessageCircle, Video, ShoppingBag, Skull, Bug, BarChart3,
@@ -41,10 +41,23 @@ export default function DnsRules() {
   const [showAdd, setShowAdd] = useState(false);
   const [newDomain, setNewDomain] = useState("");
   const [newCategory, setNewCategory] = useState("Custom");
-  const [wRules, setWRules] = useState(whitelistRules);
-  const [bRules, setBRules] = useState(blacklistRules);
-  const [categories, setCategories] = useState<CategoryBlacklist[]>(categoryBlacklists);
+  const [wRules, setWRules] = useState(() => {
+    const saved = localStorage.getItem("dns-whitelist-rules");
+    return saved ? JSON.parse(saved) : whitelistRules;
+  });
+  const [bRules, setBRules] = useState(() => {
+    const saved = localStorage.getItem("dns-blacklist-rules");
+    return saved ? JSON.parse(saved) : blacklistRules;
+  });
+  const [categories, setCategories] = useState<CategoryBlacklist[]>(() => {
+    const saved = localStorage.getItem("dns-category-blacklists");
+    return saved ? JSON.parse(saved) : categoryBlacklists;
+  });
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
+
+  useEffect(() => { localStorage.setItem("dns-category-blacklists", JSON.stringify(categories)); }, [categories]);
+  useEffect(() => { localStorage.setItem("dns-whitelist-rules", JSON.stringify(wRules)); }, [wRules]);
+  useEffect(() => { localStorage.setItem("dns-blacklist-rules", JSON.stringify(bRules)); }, [bRules]);
 
   const filteredCustom = bRules.filter((r) => r.domain.toLowerCase().includes(search.toLowerCase()));
   const filteredWhitelist = wRules.filter((r) => r.domain.toLowerCase().includes(search.toLowerCase()));
