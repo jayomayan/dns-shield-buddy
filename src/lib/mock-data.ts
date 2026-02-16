@@ -44,29 +44,142 @@ export const queryLogs = Array.from({ length: 100 }, (_, i) => ({
     "slack.com", "malware-c2.evil.com", "office365.com", "phishing.badsite.xyz",
     "aws.amazon.com", "cdn.jsdelivr.net", "api.stripe.com", "fonts.googleapis.com",
   ][Math.floor(Math.random() * 12)],
-  type: ["A", "AAAA", "CNAME", "MX", "TXT"][Math.floor(Math.random() * 5)],
-  status: Math.random() > 0.2 ? "allowed" : "blocked",
+  type: ["A", "AAAA", "CNAME", "MX", "TXT"][Math.floor(Math.random() * 5)] as "A" | "AAAA" | "CNAME" | "MX" | "TXT",
+  status: (Math.random() > 0.2 ? "allowed" : "blocked") as "allowed" | "blocked",
   responseTime: Math.floor(Math.random() * 50 + 1),
-  tenant: ["Acme Corp", "Globex Inc", "Initech", "Umbrella Co"][Math.floor(Math.random() * 4)],
 })).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
 export type QueryLog = (typeof queryLogs)[0];
 
 export const whitelistRules = [
-  { id: "w1", domain: "*.google.com", tenant: "Global", createdAt: "2024-01-15", enabled: true },
-  { id: "w2", domain: "*.github.com", tenant: "Global", createdAt: "2024-01-15", enabled: true },
-  { id: "w3", domain: "*.slack.com", tenant: "Acme Corp", createdAt: "2024-02-01", enabled: true },
-  { id: "w4", domain: "*.office365.com", tenant: "Global", createdAt: "2024-01-15", enabled: true },
-  { id: "w5", domain: "*.amazonaws.com", tenant: "Global", createdAt: "2024-01-20", enabled: true },
+  { id: "w1", domain: "*.google.com", createdAt: "2024-01-15", enabled: true },
+  { id: "w2", domain: "*.github.com", createdAt: "2024-01-15", enabled: true },
+  { id: "w3", domain: "*.slack.com", createdAt: "2024-02-01", enabled: true },
+  { id: "w4", domain: "*.office365.com", createdAt: "2024-01-15", enabled: true },
+  { id: "w5", domain: "*.amazonaws.com", createdAt: "2024-01-20", enabled: true },
 ];
 
 export const blacklistRules = [
-  { id: "b1", domain: "*.doubleclick.net", category: "Advertising", tenant: "Global", createdAt: "2024-01-15", enabled: true },
-  { id: "b2", domain: "*.analytics.io", category: "Tracking", tenant: "Global", createdAt: "2024-01-15", enabled: true },
-  { id: "b3", domain: "malware-c2.evil.com", category: "Malware", tenant: "Global", createdAt: "2024-03-01", enabled: true },
-  { id: "b4", domain: "*.badsite.xyz", category: "Phishing", tenant: "Global", createdAt: "2024-02-10", enabled: true },
-  { id: "b5", domain: "*.crypto-miner.pool.net", category: "Cryptomining", tenant: "Global", createdAt: "2024-01-25", enabled: false },
-  { id: "b6", domain: "*.mailblast.org", category: "Spam", tenant: "Initech", createdAt: "2024-03-05", enabled: true },
+  { id: "b1", domain: "*.doubleclick.net", category: "Advertising", createdAt: "2024-01-15", enabled: true },
+  { id: "b2", domain: "*.analytics.io", category: "Tracking", createdAt: "2024-01-15", enabled: true },
+  { id: "b3", domain: "malware-c2.evil.com", category: "Malware", createdAt: "2024-03-01", enabled: true },
+  { id: "b4", domain: "*.badsite.xyz", category: "Phishing", createdAt: "2024-02-10", enabled: true },
+  { id: "b5", domain: "*.crypto-miner.pool.net", category: "Cryptomining", createdAt: "2024-01-25", enabled: false },
+  { id: "b6", domain: "*.mailblast.org", category: "Spam", createdAt: "2024-03-05", enabled: true },
+];
+
+export interface CategoryBlacklist {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  domains: string[];
+}
+
+export const categoryBlacklists: CategoryBlacklist[] = [
+  {
+    id: "cat-social",
+    name: "Social Media",
+    description: "Block social media platforms and related services",
+    enabled: false,
+    domains: [
+      "*.facebook.com", "*.instagram.com", "*.twitter.com", "*.x.com", "*.tiktok.com",
+      "*.snapchat.com", "*.pinterest.com", "*.linkedin.com", "*.reddit.com", "*.tumblr.com",
+      "*.threads.net", "*.mastodon.social",
+    ],
+  },
+  {
+    id: "cat-gaming",
+    name: "Gaming",
+    description: "Block gaming platforms, stores, and multiplayer services",
+    enabled: false,
+    domains: [
+      "*.steampowered.com", "*.store.steampowered.com", "*.epicgames.com", "*.ea.com",
+      "*.riotgames.com", "*.blizzard.com", "*.battle.net", "*.xbox.com", "*.playstation.com",
+      "*.twitch.tv", "*.discord.gg", "*.roblox.com", "*.minecraft.net",
+    ],
+  },
+  {
+    id: "cat-streaming",
+    name: "Streaming & Video",
+    description: "Block video streaming and entertainment platforms",
+    enabled: false,
+    domains: [
+      "*.youtube.com", "*.netflix.com", "*.hulu.com", "*.disneyplus.com", "*.hbomax.com",
+      "*.primevideo.com", "*.peacocktv.com", "*.crunchyroll.com", "*.twitch.tv",
+      "*.dailymotion.com", "*.vimeo.com",
+    ],
+  },
+  {
+    id: "cat-shopping",
+    name: "Shopping",
+    description: "Block e-commerce and online shopping sites",
+    enabled: false,
+    domains: [
+      "*.amazon.com", "*.ebay.com", "*.etsy.com", "*.walmart.com", "*.target.com",
+      "*.aliexpress.com", "*.wish.com", "*.shopify.com", "*.bestbuy.com",
+    ],
+  },
+  {
+    id: "cat-malware",
+    name: "Malware & Phishing",
+    description: "Block known malware distribution and phishing domains",
+    enabled: true,
+    domains: [
+      "*.malware-c2.evil.com", "*.phishing.badsite.xyz", "*.ransomware.pay.net",
+      "*.keylogger.stealth.io", "*.trojan.download.xyz", "*.exploit-kit.bad.com",
+      "*.fake-bank-login.com", "*.credential-harvest.net", "*.drive-by-download.org",
+      "*.botnet-controller.xyz",
+    ],
+  },
+  {
+    id: "cat-ads",
+    name: "Advertising & Tracking",
+    description: "Block ad networks, trackers, and analytics beacons",
+    enabled: true,
+    domains: [
+      "*.doubleclick.net", "*.googlesyndication.com", "*.adnxs.com", "*.taboola.com",
+      "*.outbrain.com", "*.criteo.com", "*.facebook.net", "*.hotjar.com",
+      "*.mixpanel.com", "*.segment.io", "*.amplitude.com", "*.mouseflow.com",
+    ],
+  },
+  {
+    id: "cat-adult",
+    name: "Adult Content",
+    description: "Block adult and explicit content websites",
+    enabled: true,
+    domains: ["*.pornhub.com", "*.xvideos.com", "*.xhamster.com", "*.onlyfans.com", "*.redtube.com"],
+  },
+  {
+    id: "cat-gambling",
+    name: "Gambling",
+    description: "Block online gambling and betting platforms",
+    enabled: false,
+    domains: [
+      "*.bet365.com", "*.draftkings.com", "*.fanduel.com", "*.pokerstars.com",
+      "*.888casino.com", "*.bovada.lv", "*.betway.com",
+    ],
+  },
+  {
+    id: "cat-spam",
+    name: "Spam",
+    description: "Block known spam sources and bulk email services",
+    enabled: true,
+    domains: [
+      "*.mailblast.org", "*.spam-sender.net", "*.bulk-mailer.io",
+      "*.fake-newsletter.com", "*.junk-mail-server.org",
+    ],
+  },
+  {
+    id: "cat-crypto",
+    name: "Cryptomining",
+    description: "Block browser-based cryptocurrency mining scripts",
+    enabled: true,
+    domains: [
+      "*.coinhive.com", "*.crypto-loot.com", "*.coin-hive.com",
+      "*.jsecoin.com", "*.cryptonight.wasm", "*.minero.cc",
+    ],
+  },
 ];
 
 export const serverMetrics = {
@@ -82,10 +195,3 @@ export const serverMetrics = {
   os: "Ubuntu 22.04 LTS",
   resolver: "Unbound 1.19.0",
 };
-
-export const tenants = [
-  { id: "t1", name: "Acme Corp", users: 245, queries: 312450, blocked: 45600 },
-  { id: "t2", name: "Globex Inc", users: 128, queries: 198200, blocked: 32100 },
-  { id: "t3", name: "Initech", users: 89, queries: 156300, blocked: 21400 },
-  { id: "t4", name: "Umbrella Co", users: 312, queries: 180343, blocked: 25756 },
-];
