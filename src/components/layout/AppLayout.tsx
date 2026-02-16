@@ -3,8 +3,9 @@ import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Shield, FileText, Settings, Server, Zap, BookOpen,
-  Activity, ChevronLeft, ChevronRight, Globe, LogOut,
+  Activity, ChevronLeft, ChevronRight, Globe, LogOut, Sun, Moon, Monitor,
 } from "lucide-react";
+import { useTheme } from "@/components/ThemeProvider";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -18,7 +19,9 @@ const navItems = [
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
   const location = useLocation();
+  const { theme, setTheme } = useTheme();
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -112,7 +115,33 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {navItems.find((n) => n.path === location.pathname)?.label || "DNSGuard"}
             </h1>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {/* Theme Toggle */}
+            <div className="relative">
+              <button
+                onClick={() => setThemeOpen(!themeOpen)}
+                className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                {theme === "light" ? <Sun className="h-4 w-4" /> : theme === "dark" ? <Moon className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
+              </button>
+              {themeOpen && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setThemeOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-30 bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[140px]">
+                    {([["light", Sun, "Light"], ["dark", Moon, "Dark"], ["system", Monitor, "System"]] as const).map(([value, Icon, label]) => (
+                      <button
+                        key={value}
+                        onClick={() => { setTheme(value); setThemeOpen(false); }}
+                        className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors ${theme === value ? "text-primary bg-primary/10" : "text-popover-foreground hover:bg-muted"}`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-success/10 border border-success/20">
               <div className="w-2 h-2 rounded-full bg-success animate-pulse-glow" />
               <span className="text-xs font-mono text-success">ONLINE</span>
