@@ -8,6 +8,7 @@ import Dashboard from "@/pages/Dashboard";
 import DnsRules from "@/pages/DnsRules";
 import QueryLogs from "@/pages/QueryLogs";
 import Monitoring from "@/pages/Monitoring";
+import UnboundConfig from "@/pages/UnboundConfig";
 import SettingsPage from "@/pages/SettingsPage";
 import NotFound from "./pages/NotFound";
 
@@ -24,6 +25,7 @@ const App = () => (
           <Route path="/dns-rules" element={<AppLayout><DnsRules /></AppLayout>} />
           <Route path="/query-logs" element={<AppLayout><QueryLogs /></AppLayout>} />
           <Route path="/monitoring" element={<AppLayout><Monitoring /></AppLayout>} />
+          <Route path="/unbound" element={<AppLayout><UnboundConfig /></AppLayout>} />
           <Route path="/settings" element={<AppLayout><SettingsPage /></AppLayout>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
