@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { queryStats as baseStats, hourlyData as baseHourly, topBlockedDomains, type QueryLog } from "@/lib/mock-data";
+import { queryStats as baseStats, hourlyData as baseHourly, topBlockedDomains, serverMetrics, type QueryLog } from "@/lib/mock-data";
 
 const DOMAINS = [
   "google.com", "ads.doubleclick.net", "github.com", "tracker.analytics.io",
@@ -71,6 +71,28 @@ export function useLiveDashboard(intervalMs = 3000) {
   }, [intervalMs, paused]);
 
   return { stats, hourly, blocked, lastUpdate, paused, setPaused };
+}
+
+export function useLiveServerMetrics(intervalMs = 3000) {
+  const [metrics, setMetrics] = useState({ ...serverMetrics });
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    if (paused) return;
+    const timer = setInterval(() => {
+      setMetrics((prev) => ({
+        ...prev,
+        cpu: Math.min(100, Math.max(5, prev.cpu + Math.floor(Math.random() * 11 - 5))),
+        memory: Math.min(100, Math.max(10, prev.memory + Math.floor(Math.random() * 7 - 3))),
+        disk: Math.min(100, Math.max(20, prev.disk + Math.floor(Math.random() * 3 - 1))),
+        networkIn: +(Math.max(10, prev.networkIn + (Math.random() * 20 - 10))).toFixed(1),
+        networkOut: +(Math.max(5, prev.networkOut + (Math.random() * 15 - 7))).toFixed(1),
+      }));
+    }, intervalMs);
+    return () => clearInterval(timer);
+  }, [intervalMs, paused]);
+
+  return { metrics, paused, setPaused };
 }
 
 export function useLiveQueryLogs(intervalMs = 2000) {

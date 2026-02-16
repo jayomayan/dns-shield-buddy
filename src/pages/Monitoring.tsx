@@ -1,5 +1,5 @@
-import { Cpu, HardDrive, MemoryStick, Wifi, Play, Square, RotateCcw, Server } from "lucide-react";
-import { serverMetrics } from "@/lib/mock-data";
+import { Cpu, HardDrive, MemoryStick, Wifi, Play, Square, RotateCcw, Server, Pause } from "lucide-react";
+import { useLiveServerMetrics } from "@/hooks/use-live-data";
 import { motion } from "framer-motion";
 import { useState } from "react";
 
@@ -29,6 +29,7 @@ function GaugeRing({ value, label, color, icon: Icon }: { value: number; label: 
 }
 
 export default function Monitoring() {
+  const { metrics: serverMetrics, paused, setPaused } = useLiveServerMetrics(2000);
   const [serviceStatus, setServiceStatus] = useState<"running" | "stopped">(serverMetrics.status);
 
   return (
@@ -69,6 +70,13 @@ export default function Monitoring() {
           </button>
           <button className="flex items-center gap-2 px-4 py-2 bg-warning/10 text-warning border border-warning/20 rounded-lg text-sm font-medium hover:bg-warning/20 transition-colors">
             <RotateCcw className="h-4 w-4" /> Restart
+          </button>
+          <button
+            onClick={() => setPaused(!paused)}
+            className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary border border-primary/20 rounded-lg text-sm font-medium hover:bg-primary/20 transition-colors ml-auto"
+          >
+            {paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+            {paused ? "Resume Metrics" : "Pause Metrics"}
           </button>
         </div>
       </motion.div>
