@@ -103,7 +103,7 @@ export default function Monitoring() {
             {[
               ["Version", serverMetrics.version],
               ["OS", serverMetrics.os],
-              ["Resolver", serverMetrics.resolver],
+              ["Resolver", "Unbound 1.19.0"],
               ["DNS Port", serverMetrics.dnsPort],
               ["API Port", serverMetrics.apiPort],
             ].map(([label, value]) => (
