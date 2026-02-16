@@ -194,4 +194,11 @@ export const serverMetrics = {
   version: "2.4.1",
   os: "Ubuntu 22.04 LTS",
   resolver: "Unbound 1.19.0",
+  hostname: "dns-shield-01",
+  ipAddress: "192.168.1.10",
+  publicIp: "203.0.113.42",
+  netmask: "255.255.255.0",
+  gateway: "192.168.1.1",
+  macAddress: "00:1A:2B:3C:4D:5E",
+  dnsInterface: "eth0",
 };
