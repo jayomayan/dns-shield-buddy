@@ -6,6 +6,58 @@
 
 @layer base {
   :root {
+    --background: 0 0% 98%;
+    --foreground: 220 15% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 15% 15%;
+
+    --primary: 190 95% 40%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 92%;
+    --secondary-foreground: 220 15% 25%;
+
+    --muted: 220 14% 94%;
+    --muted-foreground: 215 15% 45%;
+
+    --accent: 190 80% 35%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 150 70% 38%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 20% 10%;
+
+    --border: 220 13% 87%;
+    --input: 220 13% 87%;
+    --ring: 190 95% 40%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 220 14% 96%;
+    --sidebar-foreground: 220 15% 35%;
+    --sidebar-primary: 190 95% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 90%;
+    --sidebar-accent-foreground: 220 15% 15%;
+    --sidebar-border: 220 13% 87%;
+    --sidebar-ring: 190 95% 40%;
+
+    --chart-allowed: 150 70% 38%;
+    --chart-blocked: 0 72% 50%;
+    --chart-cached: 38 92% 50%;
+    --chart-forwarded: 190 95% 40%;
+  }
+
+  .dark {
     --background: 220 20% 7%;
     --foreground: 210 20% 92%;
 
@@ -39,8 +91,6 @@
     --border: 220 14% 18%;
     --input: 220 14% 18%;
     --ring: 190 95% 50%;
-
-    --radius: 0.5rem;
 
     --sidebar-background: 220 20% 5%;
     --sidebar-foreground: 210 20% 75%;
