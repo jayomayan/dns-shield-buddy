@@ -1,6 +1,6 @@
-import { motion, useSpring, useTransform, useMotionValue } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useMemo } from "react";
 
 interface StatCardProps {
   title: string;
@@ -27,37 +27,46 @@ const iconVariants = {
   warning: "text-warning bg-warning/10",
 };
 
-function AnimatedNumber({ value }: { value: number }) {
-  const motionValue = useMotionValue(value);
-  const spring = useSpring(motionValue, { stiffness: 80, damping: 20 });
-  const [display, setDisplay] = useState(value.toLocaleString());
-  const [flash, setFlash] = useState(false);
-  const prevRef = useRef(value);
+function RollingDigit({ char, index }: { char: string; index: number }) {
+  const isDigit = /\d/.test(char);
 
-  useEffect(() => {
-    if (value !== prevRef.current) {
-      setFlash(true);
-      setTimeout(() => setFlash(false), 600);
-      prevRef.current = value;
-    }
-    motionValue.set(value);
-  }, [value, motionValue]);
-
-  useEffect(() => {
-    const unsubscribe = spring.on("change", (v) => {
-      setDisplay(Math.round(v).toLocaleString());
-    });
-    return unsubscribe;
-  }, [spring]);
+  if (!isDigit) {
+    return <span>{char}</span>;
+  }
 
   return (
-    <span className={`transition-colors duration-500 ${flash ? "text-primary" : ""}`}>
-      {display}
+    <span className="inline-block relative" style={{ width: "0.62em", height: "1em", verticalAlign: "top" }}>
+      <AnimatePresence mode="popLayout">
+        <motion.span
+          key={`${index}-${char}`}
+          initial={{ y: "100%", opacity: 0 }}
+          animate={{ y: "0%", opacity: 1 }}
+          exit={{ y: "-100%", opacity: 0 }}
+          transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          {char}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+function RollingNumber({ value }: { value: string }) {
+  const chars = useMemo(() => value.split(""), [value]);
+
+  return (
+    <span className="inline-flex overflow-hidden" style={{ lineHeight: "1em" }}>
+      {chars.map((char, i) => (
+        <RollingDigit key={`pos-${value.length - i}`} char={char} index={value.length - i} />
+      ))}
     </span>
   );
 }
 
 export default function StatCard({ title, value, subtitle, icon: Icon, variant = "default", delay = 0 }: StatCardProps) {
+  const displayValue = typeof value === "number" ? value.toLocaleString() : value;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -69,7 +78,7 @@ export default function StatCard({ title, value, subtitle, icon: Icon, variant =
         <div>
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{title}</p>
           <p className="text-2xl font-bold mt-1 font-mono">
-            {typeof value === "number" ? <AnimatedNumber value={value} /> : value}
+            {typeof value === "number" ? <RollingNumber value={displayValue} /> : displayValue}
           </p>
           {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
         </div>
