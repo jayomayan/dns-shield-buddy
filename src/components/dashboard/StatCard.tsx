@@ -78,7 +78,7 @@ export default function StatCard({ title, value, subtitle, icon: Icon, variant =
         <div>
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{title}</p>
           <p className="text-2xl font-bold mt-1 font-mono">
-            {typeof value === "number" ? <RollingNumber value={displayValue} /> : displayValue}
+            <RollingNumber value={displayValue} />
           </p>
           {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
         </div>
