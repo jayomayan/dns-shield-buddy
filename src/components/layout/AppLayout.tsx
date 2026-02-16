@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard, Shield, FileText, Settings, Server, Zap,
+  LayoutDashboard, Shield, FileText, Settings, Server, Zap, BookOpen,
   Activity, ChevronLeft, ChevronRight, Globe, LogOut,
 } from "lucide-react";
 
@@ -12,6 +12,7 @@ const navItems = [
   { path: "/query-logs", icon: FileText, label: "Query Logs" },
   { path: "/monitoring", icon: Server, label: "Monitoring" },
   { path: "/unbound", icon: Zap, label: "Unbound DNS" },
+  { path: "/setup", icon: BookOpen, label: "Setup & Docs" },
   { path: "/settings", icon: Settings, label: "Settings" },
 ];
 
