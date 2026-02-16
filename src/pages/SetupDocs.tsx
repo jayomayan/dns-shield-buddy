@@ -174,17 +174,19 @@ tail -f /var/log/unbound/unbound.log`,
   },
   {
     id: "s7",
-    title: "Configure Authentication (Okta SSO)",
-    description: "Set up enterprise authentication via Okta Single Sign-On.",
+    title: "Configure Authentication",
+    description: "Set up Okta SSO for platform users and API tokens for programmatic access.",
     details: [
-      "Navigate to Settings → Okta SSO Configuration",
-      "Enter your Okta domain (e.g., https://your-org.okta.com)",
-      "Provide the Client ID and Client Secret from your Okta application",
+      "Platform User SSO: Navigate to Settings → Okta SSO Configuration",
+      "Enter your Okta domain, Client ID, and Client Secret",
       "Set the callback URL in Okta to: https://your-dnsguard-domain/auth/callback",
-      "Until Okta is configured, temporary admin access is enabled",
-      "Okta supports MFA enforcement for additional security",
+      "API Access: Navigate to Settings → API Tokens to create scoped tokens",
+      "Tokens use the format 'dng_<random>' and support granular scopes (dns:read, rules:write, etc.)",
+      "Include token in requests via the Authorization header: Bearer dng_your_token_here",
+      "Set token expiry (30 days to never) and restrict scopes to least-privilege",
+      "Okta handles platform user login with optional MFA; API tokens handle automation & CI/CD",
     ],
-    warning: "Configure Okta SSO before deploying to production. Temporary admin access should only be used during initial setup.",
+    warning: "Configure Okta SSO before deploying to production. API tokens should use least-privilege scopes and be rotated regularly.",
   },
   {
     id: "s8",
@@ -281,11 +283,15 @@ const WALKTHROUGH_ITEMS = [
   {
     title: "Settings",
     icon: Settings,
-    description: "Platform configuration for authentication, logging, and alerts.",
+    description: "Platform configuration for authentication, API tokens, logging, and alerts.",
     features: [
-      "Okta SSO — enterprise authentication configuration",
+      "Okta SSO — enterprise authentication for platform users (login to the Web UI)",
+      "API Tokens — create scoped tokens for programmatic API access (CI/CD, monitoring, automation)",
+      "Token scopes — granular permissions: dns:read/write, rules:read/write, logs:read, monitoring:read, config:read/write",
+      "Token lifecycle — set expiry (30 days to never), reveal/copy tokens, revoke when no longer needed",
       "Query Logging — retention period, rotation policy, max log size",
       "Notifications — alerts for high block volume and service status changes",
+      "Theme — switch between Dark Mode, Light Mode, and System preference",
     ],
   },
 ];
@@ -399,6 +405,18 @@ const FAQ_ITEMS = [
   {
     q: "How long are query logs retained?",
     a: "Configurable in Settings → Query Logging. Default is 30 days with daily rotation. You can set retention from 1 to 365 days and max log size from 100 MB to 10 GB.",
+  },
+  {
+    q: "What is the difference between Okta SSO and API tokens?",
+    a: "Okta SSO is used for platform user authentication — it controls who can log in to the DNSGuard Web UI. API tokens are for programmatic access (scripts, CI/CD pipelines, monitoring tools). Tokens are scoped with granular permissions like dns:read, rules:write, and logs:read, and should follow least-privilege principles.",
+  },
+  {
+    q: "How do I authenticate API requests?",
+    a: "Generate an API token in Settings → API Tokens with the required scopes. Include the token in your HTTP requests using the Authorization header: 'Authorization: Bearer dng_your_token_here'. Tokens can be set to expire after 30–365 days or never. Revoke tokens immediately if compromised.",
+  },
+  {
+    q: "Can I switch between dark and light mode?",
+    a: "Yes. Use the theme toggle in the top navigation bar to switch between Dark Mode, Light Mode, and System (follows your OS preference). Your choice is saved locally and persists across sessions.",
   },
 ];
 
@@ -636,7 +654,16 @@ export default function SetupDocs() {
           <div className="space-y-4">
             <div className="bg-card border border-border rounded-lg p-5 mb-2">
               <h3 className="text-sm font-semibold mb-1">API Reference</h3>
-              <p className="text-xs text-muted-foreground">Edge Functions that bridge the Web UI and Unbound server. All endpoints require authentication via Okta SSO token.</p>
+              <p className="text-xs text-muted-foreground mb-3">Edge Functions that bridge the Web UI and Unbound server. All endpoints require authentication via API token.</p>
+              <div className="bg-muted/50 border border-border rounded-lg p-4">
+                <h4 className="text-xs font-semibold text-muted-foreground mb-2">AUTHENTICATION</h4>
+                <p className="text-xs text-muted-foreground mb-2">Include your API token in the <code className="px-1.5 py-0.5 bg-background rounded border border-border font-mono text-[11px]">Authorization</code> header:</p>
+                <pre className="bg-background border border-border rounded-lg p-3 text-xs font-mono text-muted-foreground overflow-x-auto">
+{`curl -H "Authorization: Bearer dng_your_token_here" \\
+     https://your-dnsguard-domain/api/unbound/status`}
+                </pre>
+                <p className="text-xs text-muted-foreground mt-2">Generate tokens in <span className="text-foreground font-medium">Settings → API Tokens</span>. Tokens are scoped — ensure your token has the required permissions for each endpoint.</p>
+              </div>
             </div>
             <div className="bg-card border border-border rounded-lg overflow-hidden">
               <table className="w-full text-sm">
