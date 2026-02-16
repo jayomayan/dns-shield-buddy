@@ -1,5 +1,6 @@
-import { motion } from "framer-motion";
+import { motion, useSpring, useTransform, useMotionValue } from "framer-motion";
 import { LucideIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 interface StatCardProps {
   title: string;
@@ -26,6 +27,36 @@ const iconVariants = {
   warning: "text-warning bg-warning/10",
 };
 
+function AnimatedNumber({ value }: { value: number }) {
+  const motionValue = useMotionValue(value);
+  const spring = useSpring(motionValue, { stiffness: 80, damping: 20 });
+  const [display, setDisplay] = useState(value.toLocaleString());
+  const [flash, setFlash] = useState(false);
+  const prevRef = useRef(value);
+
+  useEffect(() => {
+    if (value !== prevRef.current) {
+      setFlash(true);
+      setTimeout(() => setFlash(false), 600);
+      prevRef.current = value;
+    }
+    motionValue.set(value);
+  }, [value, motionValue]);
+
+  useEffect(() => {
+    const unsubscribe = spring.on("change", (v) => {
+      setDisplay(Math.round(v).toLocaleString());
+    });
+    return unsubscribe;
+  }, [spring]);
+
+  return (
+    <span className={`transition-colors duration-500 ${flash ? "text-primary" : ""}`}>
+      {display}
+    </span>
+  );
+}
+
 export default function StatCard({ title, value, subtitle, icon: Icon, variant = "default", delay = 0 }: StatCardProps) {
   return (
     <motion.div
@@ -37,7 +68,9 @@ export default function StatCard({ title, value, subtitle, icon: Icon, variant =
       <div className="flex items-start justify-between">
         <div>
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{title}</p>
-          <p className="text-2xl font-bold mt-1 font-mono">{typeof value === "number" ? value.toLocaleString() : value}</p>
+          <p className="text-2xl font-bold mt-1 font-mono">
+            {typeof value === "number" ? <AnimatedNumber value={value} /> : value}
+          </p>
           {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
         </div>
         <div className={`p-2.5 rounded-lg ${iconVariants[variant]}`}>
