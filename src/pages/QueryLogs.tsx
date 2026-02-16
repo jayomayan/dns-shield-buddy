@@ -1,21 +1,22 @@
 import { useState, useMemo } from "react";
-import { Search, Download, Filter, RefreshCw } from "lucide-react";
-import { queryLogs, type QueryLog } from "@/lib/mock-data";
-import { motion } from "framer-motion";
+import { Search, Download, Pause, Play, Radio, RefreshCw } from "lucide-react";
+import { useLiveQueryLogs } from "@/hooks/use-live-data";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function QueryLogs() {
+  const { logs, paused, setPaused, newCount } = useLiveQueryLogs(2000);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "allowed" | "blocked">("all");
   const [typeFilter, setTypeFilter] = useState("all");
 
   const filtered = useMemo(() => {
-    return queryLogs.filter((log) => {
+    return logs.filter((log) => {
       const matchSearch = log.domain.toLowerCase().includes(search.toLowerCase()) || log.clientIp.includes(search);
       const matchStatus = statusFilter === "all" || log.status === statusFilter;
       const matchType = typeFilter === "all" || log.type === typeFilter;
       return matchSearch && matchStatus && matchType;
     });
-  }, [search, statusFilter, typeFilter]);
+  }, [logs, search, statusFilter, typeFilter]);
 
   const exportCSV = () => {
     const header = "Timestamp,Client IP,Domain,Type,Status,Response Time,Tenant\n";
@@ -31,8 +32,31 @@ export default function QueryLogs() {
 
   return (
     <div className="space-y-6">
-      {/* Filters */}
+      {/* Live bar + Filters */}
       <div className="flex flex-wrap items-center gap-3">
+        {/* Live indicator */}
+        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium ${
+          paused
+            ? "bg-warning/10 text-warning border border-warning/20"
+            : "bg-success/10 text-success border border-success/20"
+        }`}>
+          {paused ? <Pause className="h-3 w-3" /> : <Radio className="h-3 w-3 animate-pulse-glow" />}
+          {paused ? "PAUSED" : "LIVE"}
+        </div>
+
+        <AnimatePresence>
+          {newCount > 0 && !paused && (
+            <motion.span
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="text-[11px] font-mono text-primary"
+            >
+              +{newCount} new
+            </motion.span>
+          )}
+        </AnimatePresence>
+
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -67,8 +91,12 @@ export default function QueryLogs() {
         </select>
 
         <div className="flex items-center gap-2 ml-auto">
-          <button className="flex items-center gap-2 px-3 py-2 text-muted-foreground hover:text-foreground border border-border rounded-lg text-sm transition-colors">
-            <RefreshCw className="h-4 w-4" /> Refresh
+          <button
+            onClick={() => setPaused(!paused)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-border text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+            {paused ? "Resume" : "Pause"}
           </button>
           <button
             onClick={exportCSV}
@@ -80,14 +108,10 @@ export default function QueryLogs() {
       </div>
 
       {/* Results count */}
-      <p className="text-xs text-muted-foreground">{filtered.length} entries found</p>
+      <p className="text-xs text-muted-foreground">{filtered.length} entries ({logs.length} total buffered)</p>
 
       {/* Logs Table */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-card border border-border rounded-lg overflow-hidden"
-      >
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -102,8 +126,14 @@ export default function QueryLogs() {
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, 50).map((log) => (
-                <tr key={log.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+              {filtered.slice(0, 50).map((log, i) => (
+                <motion.tr
+                  key={log.id}
+                  initial={i < 3 ? { opacity: 0, backgroundColor: "hsl(190, 95%, 50%, 0.05)" } : false}
+                  animate={{ opacity: 1, backgroundColor: "transparent" }}
+                  transition={{ duration: 0.6 }}
+                  className="border-b border-border/50 hover:bg-muted/20 transition-colors"
+                >
                   <td className="py-2.5 px-4 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
                     {new Date(log.timestamp).toLocaleTimeString()}
                   </td>
@@ -125,12 +155,12 @@ export default function QueryLogs() {
                   </td>
                   <td className="py-2.5 px-4 font-mono text-xs text-muted-foreground">{log.responseTime}ms</td>
                   <td className="py-2.5 px-4 text-xs text-muted-foreground">{log.tenant}</td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
