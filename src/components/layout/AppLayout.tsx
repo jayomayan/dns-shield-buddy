@@ -11,7 +11,6 @@ const navItems = [
   { path: "/dns-rules", icon: Shield, label: "DNS Rules" },
   { path: "/query-logs", icon: FileText, label: "Query Logs" },
   { path: "/monitoring", icon: Server, label: "Monitoring" },
-  { path: "/tenants", icon: Users, label: "Tenants" },
   { path: "/settings", icon: Settings, label: "Settings" },
 ];
 

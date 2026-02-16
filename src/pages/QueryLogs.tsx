@@ -19,8 +19,8 @@ export default function QueryLogs() {
   }, [logs, search, statusFilter, typeFilter]);
 
   const exportCSV = () => {
-    const header = "Timestamp,Client IP,Domain,Type,Status,Response Time,Tenant\n";
-    const rows = filtered.map((l) => `${l.timestamp},${l.clientIp},${l.domain},${l.type},${l.status},${l.responseTime}ms,${l.tenant}`).join("\n");
+    const header = "Timestamp,Client IP,Domain,Type,Status,Response Time\n";
+    const rows = filtered.map((l) => `${l.timestamp},${l.clientIp},${l.domain},${l.type},${l.status},${l.responseTime}ms`).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -122,7 +122,7 @@ export default function QueryLogs() {
                 <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium">Type</th>
                 <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium">Status</th>
                 <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium">Response</th>
-                <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium">Tenant</th>
+                
               </tr>
             </thead>
             <tbody>
@@ -154,7 +154,7 @@ export default function QueryLogs() {
                     </span>
                   </td>
                   <td className="py-2.5 px-4 font-mono text-xs text-muted-foreground">{log.responseTime}ms</td>
-                  <td className="py-2.5 px-4 text-xs text-muted-foreground">{log.tenant}</td>
+                  
                 </motion.tr>
               ))}
             </tbody>

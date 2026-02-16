@@ -9,7 +9,6 @@ const DOMAINS = [
   "spyware.collector.net", "adnetwork.bid", "clickbait.news.xyz",
 ];
 
-const TENANTS = ["Acme Corp", "Globex Inc", "Initech", "Umbrella Co"];
 const TYPES: QueryLog["type"][] = ["A", "AAAA", "CNAME", "MX", "TXT"];
 
 function generateLog(id: number): QueryLog {
@@ -24,7 +23,6 @@ function generateLog(id: number): QueryLog {
     type: TYPES[Math.floor(Math.random() * TYPES.length)],
     status: isBlocked ? "blocked" : "allowed",
     responseTime: Math.floor(Math.random() * 45 + 2),
-    tenant: TENANTS[Math.floor(Math.random() * TENANTS.length)],
   };
 }
 
