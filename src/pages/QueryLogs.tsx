@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
-import { Search, Download, Pause, Play, Radio, RefreshCw } from "lucide-react";
+import { Search, Download, Pause, Play, Radio } from "lucide-react";
 import { useLiveQueryLogs } from "@/hooks/use-live-data";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 
 export default function QueryLogs() {
   const { logs, paused, setPaused, newCount, dataSource } = useLiveQueryLogs(2000);
@@ -131,11 +131,8 @@ export default function QueryLogs() {
             </thead>
             <tbody>
               {filtered.slice(0, 50).map((log, i) => (
-                <motion.tr
+                <tr
                   key={log.id}
-                  initial={i < 3 ? { opacity: 0, backgroundColor: "hsl(190, 95%, 50%, 0.05)" } : false}
-                  animate={{ opacity: 1, backgroundColor: "transparent" }}
-                  transition={{ duration: 0.6 }}
                   className="border-b border-border/50 hover:bg-muted/20 transition-colors"
                 >
                   <td className="py-2.5 px-4 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
@@ -158,8 +155,7 @@ export default function QueryLogs() {
                     </span>
                   </td>
                   <td className="py-2.5 px-4 font-mono text-xs text-muted-foreground">{log.responseTime}ms</td>
-                  
-                </motion.tr>
+                </tr>
               ))}
             </tbody>
           </table>
