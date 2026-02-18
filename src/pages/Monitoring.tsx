@@ -31,7 +31,7 @@ function GaugeRing({ value, label, color, icon: Icon }: { value: number; label: 
 export default function Monitoring() {
   const { metrics: serverMetrics, paused, setPaused } = useLiveServerMetrics(2000);
   const pingResults = useLivePing(4000);
-  const [serviceStatus, setServiceStatus] = useState<"running" | "stopped">(serverMetrics.status);
+  const [serviceStatus, setServiceStatus] = useState<"running" | "stopped" | "unknown">(serverMetrics.status);
 
   return (
     <div className="space-y-6">

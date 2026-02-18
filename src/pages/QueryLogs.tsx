@@ -4,7 +4,7 @@ import { useLiveQueryLogs } from "@/hooks/use-live-data";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function QueryLogs() {
-  const { logs, paused, setPaused, newCount } = useLiveQueryLogs(2000);
+  const { logs, paused, setPaused, newCount, dataSource } = useLiveQueryLogs(2000);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "allowed" | "blocked">("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -38,10 +38,14 @@ export default function QueryLogs() {
         <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium ${
           paused
             ? "bg-warning/10 text-warning border border-warning/20"
-            : "bg-success/10 text-success border border-success/20"
+            : dataSource === "live"
+            ? "bg-success/10 text-success border border-success/20"
+            : dataSource === "connecting"
+            ? "bg-primary/10 text-primary border border-primary/20"
+            : "bg-warning/10 text-warning border border-warning/20"
         }`}>
           {paused ? <Pause className="h-3 w-3" /> : <Radio className="h-3 w-3 animate-pulse-glow" />}
-          {paused ? "PAUSED" : "LIVE"}
+          {paused ? "PAUSED" : dataSource === "live" ? "LIVE · unbound" : dataSource === "connecting" ? "CONNECTING…" : "SIMULATED"}
         </div>
 
         <AnimatePresence>

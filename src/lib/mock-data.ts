@@ -182,7 +182,13 @@ export const categoryBlacklists: CategoryBlacklist[] = [
   },
 ];
 
-export const serverMetrics = {
+export const serverMetrics: {
+  cpu: number; memory: number; disk: number; networkIn: number; networkOut: number;
+  dnsPort: number; apiPort: number; status: "running" | "stopped" | "unknown";
+  version: string; os: string; resolver: string; hostname: string;
+  ipAddress: string; publicIp: string; netmask: string; gateway: string;
+  macAddress: string; dnsInterface: string;
+} = {
   cpu: 23,
   memory: 45,
   disk: 62,
@@ -190,7 +196,7 @@ export const serverMetrics = {
   networkOut: 89.2,
   dnsPort: 53,
   apiPort: 443,
-  status: "running" as const,
+  status: "running",
   version: "2.4.1",
   os: "Ubuntu 22.04 LTS",
   resolver: "Unbound 1.19.0",

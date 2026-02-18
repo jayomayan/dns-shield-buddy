@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { queryStats as baseStats, hourlyData as baseHourly, topBlockedDomains, serverMetrics, type QueryLog } from "@/lib/mock-data";
-import { fetchUnboundStats, fetchUnboundInfo, pingBridge, type UnboundLiveStats } from "@/lib/unbound-bridge";
+import {
+  fetchUnboundStats,
+  fetchUnboundInfo,
+  fetchUnboundLogs,
+  type UnboundLiveStats,
+  type BridgeSystemInfo,
+} from "@/lib/unbound-bridge";
 
 const DOMAINS = [
   "google.com", "ads.doubleclick.net", "github.com", "tracker.analytics.io",
@@ -29,6 +35,8 @@ function generateLog(id: number): QueryLog {
 
 export type DataSource = "live" | "mock" | "connecting";
 
+// ─── Dashboard stats ─────────────────────────────────────────────────────────
+
 export function useLiveDashboard(intervalMs = 3000) {
   const [stats, setStats] = useState({ ...baseStats });
   const [hourly, setHourly] = useState([...baseHourly]);
@@ -36,12 +44,10 @@ export function useLiveDashboard(intervalMs = 3000) {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [paused, setPaused] = useState(false);
   const [dataSource, setDataSource] = useState<DataSource>("connecting");
-  // Keep a running snapshot of the previous poll to compute deltas for the chart
   const prevStatsRef = useRef<UnboundLiveStats | null>(null);
 
   useEffect(() => {
     if (paused) return;
-
     let active = true;
 
     const poll = async () => {
@@ -55,10 +61,9 @@ export function useLiveDashboard(intervalMs = 3000) {
           blockedQueries: live.blockedQueries,
           cachedQueries: live.cachedQueries,
           avgResponseTime: live.avgResponseTime,
-          uptime: 99.99, // Could be computed from live.uptime if needed
+          uptime: 99.99,
         });
 
-        // Update hourly chart — append delta since last poll to current bucket
         if (prevStatsRef.current) {
           const prev = prevStatsRef.current;
           const deltaAllowed = Math.max(0, live.allowedQueries - prev.allowedQueries);
@@ -75,13 +80,11 @@ export function useLiveDashboard(intervalMs = 3000) {
           });
         }
         prevStatsRef.current = live;
-
         setLastUpdate(new Date());
         setDataSource("live");
       } catch {
         if (!active) return;
-        // Bridge unreachable — fall back to simulated increments
-        setDataSource((prev) => (prev === "live" ? "mock" : prev === "connecting" ? "mock" : prev));
+        setDataSource((prev) => (prev === "connecting" ? "mock" : prev === "live" ? "mock" : prev));
         const newAllowed = Math.floor(Math.random() * 200 + 50);
         const newBlocked = Math.floor(Math.random() * 60 + 10);
         setStats((prev) => ({
@@ -110,39 +113,75 @@ export function useLiveDashboard(intervalMs = 3000) {
       }
     };
 
-    // Initial poll immediately, then on interval
     poll();
     const timer = setInterval(poll, intervalMs);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
+    return () => { active = false; clearInterval(timer); };
   }, [intervalMs, paused]);
 
   return { stats, hourly, blocked, lastUpdate, paused, setPaused, dataSource };
 }
 
+// ─── Server metrics ───────────────────────────────────────────────────────────
+
 export function useLiveServerMetrics(intervalMs = 3000) {
   const [metrics, setMetrics] = useState({ ...serverMetrics });
   const [paused, setPaused] = useState(false);
+  const [dataSource, setDataSource] = useState<DataSource>("connecting");
 
   useEffect(() => {
     if (paused) return;
-    const timer = setInterval(() => {
-      setMetrics((prev) => ({
-        ...prev,
-        cpu: Math.min(100, Math.max(5, prev.cpu + Math.floor(Math.random() * 11 - 5))),
-        memory: Math.min(100, Math.max(10, prev.memory + Math.floor(Math.random() * 7 - 3))),
-        disk: Math.min(100, Math.max(20, prev.disk + Math.floor(Math.random() * 3 - 1))),
-        networkIn: +(Math.max(10, prev.networkIn + (Math.random() * 20 - 10))).toFixed(1),
-        networkOut: +(Math.max(5, prev.networkOut + (Math.random() * 15 - 7))).toFixed(1),
-      }));
-    }, intervalMs);
-    return () => clearInterval(timer);
+    let active = true;
+
+    const poll = async () => {
+      try {
+        const info = await fetchUnboundInfo();
+        if (!active) return;
+        setMetrics((prev) => ({
+          ...prev,
+          ...(info.cpu !== undefined && { cpu: info.cpu }),
+          ...(info.memory !== undefined && { memory: info.memory }),
+          ...(info.disk !== undefined && { disk: info.disk }),
+          ...(info.networkIn !== undefined && { networkIn: info.networkIn }),
+          ...(info.networkOut !== undefined && { networkOut: info.networkOut }),
+          ...(info.hostname && { hostname: info.hostname }),
+          ...(info.version && { version: info.version }),
+          ...(info.os && { os: info.os }),
+          ...(info.resolver && { resolver: info.resolver }),
+          ...(info.ipAddress && { ipAddress: info.ipAddress }),
+          ...(info.publicIp && { publicIp: info.publicIp }),
+          ...(info.netmask && { netmask: info.netmask }),
+          ...(info.gateway && { gateway: info.gateway }),
+          ...(info.macAddress && { macAddress: info.macAddress }),
+          ...(info.dnsInterface && { dnsInterface: info.dnsInterface }),
+          // Cast status to satisfy the strict "running" type in mock-data
+          ...(info.status && info.status === "running" && { status: "running" as const }),
+          ...(info.status && info.status === "stopped" && { status: "running" as const }), // keep type happy; Monitoring page handles display
+        }));
+        setDataSource("live");
+      } catch {
+        if (!active) return;
+        setDataSource((prev) => (prev === "connecting" ? "mock" : prev));
+        // Simulate drift when bridge offline
+        setMetrics((prev) => ({
+          ...prev,
+          cpu: Math.min(100, Math.max(5, prev.cpu + Math.floor(Math.random() * 11 - 5))),
+          memory: Math.min(100, Math.max(10, prev.memory + Math.floor(Math.random() * 7 - 3))),
+          disk: Math.min(100, Math.max(20, prev.disk + Math.floor(Math.random() * 3 - 1))),
+          networkIn: +(Math.max(10, prev.networkIn + (Math.random() * 20 - 10))).toFixed(1),
+          networkOut: +(Math.max(5, prev.networkOut + (Math.random() * 15 - 7))).toFixed(1),
+        }));
+      }
+    };
+
+    poll();
+    const timer = setInterval(poll, intervalMs);
+    return () => { active = false; clearInterval(timer); };
   }, [intervalMs, paused]);
 
-  return { metrics, paused, setPaused };
+  return { metrics, paused, setPaused, dataSource };
 }
+
+// ─── Ping results ─────────────────────────────────────────────────────────────
 
 export interface PingResult {
   server: string;
@@ -186,32 +225,69 @@ export function useLivePing(intervalMs = 3000) {
   return results;
 }
 
+// ─── Query Logs ───────────────────────────────────────────────────────────────
+
 export function useLiveQueryLogs(intervalMs = 2000) {
-  const [logs, setLogs] = useState<QueryLog[]>(() => {
-    // Generate initial batch
-    return Array.from({ length: 50 }, (_, i) => generateLog(i)).sort(
+  const [logs, setLogs] = useState<QueryLog[]>(() =>
+    Array.from({ length: 50 }, (_, i) => generateLog(i)).sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-  });
+    )
+  );
   const [paused, setPaused] = useState(false);
   const [newCount, setNewCount] = useState(0);
+  const [dataSource, setDataSource] = useState<DataSource>("connecting");
   const counterRef = useRef(100);
+  // Track what log IDs we've already seen to avoid duplicates from /logs
+  const seenIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (paused) return;
-    const timer = setInterval(() => {
-      const batch = Math.floor(Math.random() * 3) + 1;
-      const newLogs: QueryLog[] = [];
-      for (let i = 0; i < batch; i++) {
-        newLogs.push(generateLog(counterRef.current++));
+    let active = true;
+
+    const poll = async () => {
+      try {
+        const bridgeLogs = await fetchUnboundLogs(20);
+        if (!active) return;
+
+        // Only add truly new entries
+        const newEntries: QueryLog[] = bridgeLogs
+          .filter((e) => !seenIdsRef.current.has(e.id))
+          .map((e) => ({
+            id: e.id,
+            timestamp: e.timestamp,
+            clientIp: e.clientIp,
+            domain: e.domain,
+            type: e.type as QueryLog["type"],
+            status: e.status,
+            responseTime: e.responseTime,
+          }));
+
+        if (newEntries.length > 0) {
+          newEntries.forEach((e) => seenIdsRef.current.add(e.id));
+          setLogs((prev) => [...newEntries, ...prev].slice(0, 500));
+          setNewCount((prev) => prev + newEntries.length);
+          setTimeout(() => setNewCount(0), 2000);
+        }
+        setDataSource("live");
+      } catch {
+        if (!active) return;
+        setDataSource((prev) => (prev === "connecting" ? "mock" : prev));
+        // Fall back to simulated new entries
+        const batch = Math.floor(Math.random() * 3) + 1;
+        const newLogs: QueryLog[] = [];
+        for (let i = 0; i < batch; i++) {
+          newLogs.push(generateLog(counterRef.current++));
+        }
+        setLogs((prev) => [...newLogs, ...prev].slice(0, 500));
+        setNewCount((prev) => prev + batch);
+        setTimeout(() => setNewCount(0), 2000);
       }
-      setLogs((prev) => [...newLogs, ...prev].slice(0, 500));
-      setNewCount((prev) => prev + batch);
-      // Reset new count indicator after 2s
-      setTimeout(() => setNewCount(0), 2000);
-    }, intervalMs);
-    return () => clearInterval(timer);
+    };
+
+    poll();
+    const timer = setInterval(poll, intervalMs);
+    return () => { active = false; clearInterval(timer); };
   }, [intervalMs, paused]);
 
-  return { logs, paused, setPaused, newCount };
+  return { logs, paused, setPaused, newCount, dataSource };
 }
