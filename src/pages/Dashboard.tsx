@@ -5,7 +5,7 @@ import { useLiveDashboard } from "@/hooks/use-live-data";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function Dashboard() {
-  const { stats, hourly, blocked, lastUpdate, paused, setPaused } = useLiveDashboard(3000);
+  const { stats, hourly, blocked, lastUpdate, paused, setPaused, dataSource } = useLiveDashboard(3000);
 
   const pieData = [
     { name: "Allowed", value: stats.allowedQueries, color: "hsl(150, 70%, 45%)" },
@@ -21,14 +21,21 @@ export default function Dashboard() {
           <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium ${
             paused
               ? "bg-warning/10 text-warning border border-warning/20"
-              : "bg-success/10 text-success border border-success/20"
+              : dataSource === "live"
+              ? "bg-success/10 text-success border border-success/20"
+              : dataSource === "connecting"
+              ? "bg-primary/10 text-primary border border-primary/20"
+              : "bg-warning/10 text-warning border border-warning/20"
           }`}>
             {paused ? <Pause className="h-3 w-3" /> : <Radio className="h-3 w-3 animate-pulse-glow" />}
-            {paused ? "PAUSED" : "LIVE"}
+            {paused ? "PAUSED" : dataSource === "live" ? "LIVE · unbound" : dataSource === "connecting" ? "CONNECTING…" : "SIMULATED"}
           </div>
           <span className="text-[11px] text-muted-foreground font-mono">
             Last update: {lastUpdate.toLocaleTimeString()}
           </span>
+          {dataSource === "mock" && !paused && (
+            <span className="text-[10px] text-warning/70 font-mono">Bridge offline — using simulated data</span>
+          )}
         </div>
         <button
           onClick={() => setPaused(!paused)}

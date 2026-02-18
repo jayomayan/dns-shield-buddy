@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { queryStats as baseStats, hourlyData as baseHourly, topBlockedDomains, serverMetrics, type QueryLog } from "@/lib/mock-data";
+import { fetchUnboundStats, fetchUnboundInfo, pingBridge, type UnboundLiveStats } from "@/lib/unbound-bridge";
 
 const DOMAINS = [
   "google.com", "ads.doubleclick.net", "github.com", "tracker.analytics.io",
@@ -26,51 +27,99 @@ function generateLog(id: number): QueryLog {
   };
 }
 
+export type DataSource = "live" | "mock" | "connecting";
+
 export function useLiveDashboard(intervalMs = 3000) {
   const [stats, setStats] = useState({ ...baseStats });
   const [hourly, setHourly] = useState([...baseHourly]);
   const [blocked, setBlocked] = useState([...topBlockedDomains]);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [paused, setPaused] = useState(false);
+  const [dataSource, setDataSource] = useState<DataSource>("connecting");
+  // Keep a running snapshot of the previous poll to compute deltas for the chart
+  const prevStatsRef = useRef<UnboundLiveStats | null>(null);
 
   useEffect(() => {
     if (paused) return;
-    const timer = setInterval(() => {
-      const newAllowed = Math.floor(Math.random() * 200 + 50);
-      const newBlocked = Math.floor(Math.random() * 60 + 10);
-      setStats((prev) => ({
-        ...prev,
-        totalQueries: prev.totalQueries + newAllowed + newBlocked,
-        allowedQueries: prev.allowedQueries + newAllowed,
-        blockedQueries: prev.blockedQueries + newBlocked,
-        cachedQueries: prev.cachedQueries + Math.floor(Math.random() * 80),
-        avgResponseTime: +(Math.random() * 5 + 10).toFixed(1),
-      }));
 
-      setHourly((prev) => {
-        const updated = [...prev];
-        const lastIdx = updated.length - 1;
-        updated[lastIdx] = {
-          ...updated[lastIdx],
-          allowed: updated[lastIdx].allowed + newAllowed,
-          blocked: updated[lastIdx].blocked + newBlocked,
-        };
-        return updated;
-      });
+    let active = true;
 
-      setBlocked((prev) =>
-        prev.map((d) => ({
-          ...d,
-          count: d.count + Math.floor(Math.random() * 20),
-        })).sort((a, b) => b.count - a.count)
-      );
+    const poll = async () => {
+      try {
+        const live = await fetchUnboundStats();
+        if (!active) return;
 
-      setLastUpdate(new Date());
-    }, intervalMs);
-    return () => clearInterval(timer);
+        setStats({
+          totalQueries: live.totalQueries,
+          allowedQueries: live.allowedQueries,
+          blockedQueries: live.blockedQueries,
+          cachedQueries: live.cachedQueries,
+          avgResponseTime: live.avgResponseTime,
+          uptime: 99.99, // Could be computed from live.uptime if needed
+        });
+
+        // Update hourly chart — append delta since last poll to current bucket
+        if (prevStatsRef.current) {
+          const prev = prevStatsRef.current;
+          const deltaAllowed = Math.max(0, live.allowedQueries - prev.allowedQueries);
+          const deltaBlocked = Math.max(0, live.blockedQueries - prev.blockedQueries);
+          setHourly((h) => {
+            const updated = [...h];
+            const idx = updated.length - 1;
+            updated[idx] = {
+              ...updated[idx],
+              allowed: updated[idx].allowed + deltaAllowed,
+              blocked: updated[idx].blocked + deltaBlocked,
+            };
+            return updated;
+          });
+        }
+        prevStatsRef.current = live;
+
+        setLastUpdate(new Date());
+        setDataSource("live");
+      } catch {
+        if (!active) return;
+        // Bridge unreachable — fall back to simulated increments
+        setDataSource((prev) => (prev === "live" ? "mock" : prev === "connecting" ? "mock" : prev));
+        const newAllowed = Math.floor(Math.random() * 200 + 50);
+        const newBlocked = Math.floor(Math.random() * 60 + 10);
+        setStats((prev) => ({
+          ...prev,
+          totalQueries: prev.totalQueries + newAllowed + newBlocked,
+          allowedQueries: prev.allowedQueries + newAllowed,
+          blockedQueries: prev.blockedQueries + newBlocked,
+          cachedQueries: prev.cachedQueries + Math.floor(Math.random() * 80),
+          avgResponseTime: +(Math.random() * 5 + 10).toFixed(1),
+        }));
+        setHourly((prev) => {
+          const updated = [...prev];
+          const lastIdx = updated.length - 1;
+          updated[lastIdx] = {
+            ...updated[lastIdx],
+            allowed: updated[lastIdx].allowed + newAllowed,
+            blocked: updated[lastIdx].blocked + newBlocked,
+          };
+          return updated;
+        });
+        setBlocked((prev) =>
+          prev.map((d) => ({ ...d, count: d.count + Math.floor(Math.random() * 20) }))
+            .sort((a, b) => b.count - a.count)
+        );
+        setLastUpdate(new Date());
+      }
+    };
+
+    // Initial poll immediately, then on interval
+    poll();
+    const timer = setInterval(poll, intervalMs);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, [intervalMs, paused]);
 
-  return { stats, hourly, blocked, lastUpdate, paused, setPaused };
+  return { stats, hourly, blocked, lastUpdate, paused, setPaused, dataSource };
 }
 
 export function useLiveServerMetrics(intervalMs = 3000) {
