@@ -175,13 +175,44 @@ function CategoryCard({
 
 const DNS_TYPES = ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "PTR", "NS", "SOA"];
 
-function DnsQueryTester() {
+function DnsQueryTester({
+  bRules,
+  categories,
+  wRules,
+}: {
+  bRules: { domain: string; enabled: boolean }[];
+  categories: { name: string; enabled: boolean; domains: string[] }[];
+  wRules: { domain: string; enabled: boolean }[];
+}) {
   const [domain, setDomain] = useState("");
   const [type, setType] = useState("A");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<DnsQueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [history, setHistory] = useState<{ domain: string; type: string; result: DnsQueryResult }[]>([]);
+  const [history, setHistory] = useState<{ domain: string; type: string; result: DnsQueryResult; verdict: "blocked" | "allowed" }[]>([]);
+
+  // Check if a domain is blocked by local rules (exact or wildcard match)
+  const isDomainBlocked = (d: string): boolean => {
+    const lower = d.toLowerCase().replace(/\.$/, "");
+    // Whitelist takes priority
+    const whitelisted = wRules.some((r) => r.enabled && lower === r.domain.toLowerCase());
+    if (whitelisted) return false;
+    // Check blacklist
+    const inBlacklist = bRules.some((r) => {
+      if (!r.enabled) return false;
+      const rule = r.domain.toLowerCase().replace(/^\*\./, "");
+      return lower === rule || lower.endsWith("." + rule);
+    });
+    if (inBlacklist) return true;
+    // Check categories
+    return categories.some((cat) => {
+      if (!cat.enabled) return false;
+      return cat.domains.some((cd) => {
+        const rule = cd.toLowerCase().replace(/^\*\./, "");
+        return lower === rule || lower.endsWith("." + rule);
+      });
+    });
+  };
 
   const run = async () => {
     const d = domain.trim().replace(/\.$/, "");
@@ -191,8 +222,11 @@ function DnsQueryTester() {
     setResult(null);
     try {
       const res = await fetchDnsQuery(d, type);
-      setResult(res);
-      setHistory((prev) => [{ domain: d, type, result: res }, ...prev].slice(0, 10));
+      const localBlocked = isDomainBlocked(d);
+      const verdict: "blocked" | "allowed" = (localBlocked || res.blocked || res.status === "REFUSED" || res.status === "NXDOMAIN") ? "blocked" : "allowed";
+      const finalResult = { ...res, blocked: localBlocked || res.blocked };
+      setResult(finalResult);
+      setHistory((prev) => [{ domain: d, type, result: finalResult, verdict }, ...prev].slice(0, 10));
     } catch (e: any) {
       setError(e.message || "Query failed — bridge may be offline");
     } finally {
@@ -253,16 +287,24 @@ function DnsQueryTester() {
         {/* Result */}
         {result && (
           <div className="space-y-3">
-            {/* Summary row */}
-            <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border">
+        {/* Verdict banner */}
+          <div className={`flex items-center gap-3 p-3 rounded-lg border font-semibold text-sm ${result.blocked ? "bg-destructive/10 border-destructive/30 text-destructive" : "bg-success/10 border-success/30 text-success"}`}>
+            {result.blocked ? <ShieldX className="h-5 w-5 shrink-0" /> : <Shield className="h-5 w-5 shrink-0" />}
+            <div>
+              <span className="font-bold text-base">{result.blocked ? "BLOCKED" : "ALLOWED"}</span>
+              <span className="ml-2 font-normal text-xs opacity-80">
+                {result.blocked
+                  ? "This domain is blocked by your DNS rules"
+                  : "This domain is allowed and resolved successfully"}
+              </span>
+            </div>
+          </div>
+
+          {/* Summary row */}
+        <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border">
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusColor(result.status)}`}>
                 {result.status}
               </span>
-              {result.blocked && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-destructive/10 text-destructive border-destructive/20">
-                  BLOCKED
-                </span>
-              )}
               <span className="font-mono text-sm font-semibold">{result.domain}</span>
               <span className="text-xs text-muted-foreground">IN {result.type}</span>
               <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
@@ -322,12 +364,12 @@ function DnsQueryTester() {
                   key={i}
                   onClick={() => { setDomain(h.domain); setType(h.type); setResult(h.result); setError(null); }}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono border transition-colors hover:bg-muted ${
-                    h.result.blocked || h.result.status !== "NOERROR"
+                    h.verdict === "blocked"
                       ? "text-destructive border-destructive/20 bg-destructive/5"
-                      : "text-muted-foreground border-border bg-background"
+                      : "text-success border-success/20 bg-success/5"
                   }`}
                 >
-                  <ChevronRight className="h-3 w-3" />
+                  {h.verdict === "blocked" ? <ShieldX className="h-3 w-3" /> : <Shield className="h-3 w-3" />}
                   {h.domain} {h.type}
                 </button>
               ))}
@@ -720,7 +762,7 @@ export default function DnsRules() {
         </div>
       )}
       {/* DNS Query Tester */}
-      <DnsQueryTester />
+      <DnsQueryTester bRules={bRules} categories={categories} wRules={wRules} />
     </div>
   );
 }
