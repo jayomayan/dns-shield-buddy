@@ -4,8 +4,8 @@ import {
   fetchUnboundStats,
   fetchUnboundInfo,
   fetchUnboundLogs,
+  fetchPingResults,
   type UnboundLiveStats,
-  type BridgeSystemInfo,
 } from "@/lib/unbound-bridge";
 
 const DOMAINS = [
@@ -123,10 +123,23 @@ export function useLiveDashboard(intervalMs = 3000) {
 
 // ─── Server metrics ───────────────────────────────────────────────────────────
 
+export interface NetworkTrafficPoint {
+  time: string;
+  inbound: number;
+  outbound: number;
+}
+
 export function useLiveServerMetrics(intervalMs = 3000) {
   const [metrics, setMetrics] = useState({ ...serverMetrics });
   const [paused, setPaused] = useState(false);
   const [dataSource, setDataSource] = useState<DataSource>("connecting");
+  const [trafficHistory, setTrafficHistory] = useState<NetworkTrafficPoint[]>(() =>
+    Array.from({ length: 20 }, (_, i) => ({
+      time: new Date(Date.now() - (19 - i) * intervalMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      inbound: 0,
+      outbound: 0,
+    }))
+  );
 
   useEffect(() => {
     if (paused) return;
@@ -153,10 +166,19 @@ export function useLiveServerMetrics(intervalMs = 3000) {
           ...(info.gateway && { gateway: info.gateway }),
           ...(info.macAddress && { macAddress: info.macAddress }),
           ...(info.dnsInterface && { dnsInterface: info.dnsInterface }),
-          // Cast status to satisfy the strict "running" type in mock-data
           ...(info.status && info.status === "running" && { status: "running" as const }),
-          ...(info.status && info.status === "stopped" && { status: "running" as const }), // keep type happy; Monitoring page handles display
+          ...(info.status && info.status === "stopped" && { status: "running" as const }),
         }));
+        const inVal = info.networkIn ?? 0;
+        const outVal = info.networkOut ?? 0;
+        setTrafficHistory((prev) => [
+          ...prev.slice(-19),
+          {
+            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+            inbound: inVal,
+            outbound: outVal,
+          },
+        ]);
         setDataSource("live");
       } catch {
         if (!active) return;
@@ -170,6 +192,17 @@ export function useLiveServerMetrics(intervalMs = 3000) {
           networkIn: +(Math.max(10, prev.networkIn + (Math.random() * 20 - 10))).toFixed(1),
           networkOut: +(Math.max(5, prev.networkOut + (Math.random() * 15 - 7))).toFixed(1),
         }));
+        setTrafficHistory((prev) => {
+          const last = prev[prev.length - 1];
+          return [
+            ...prev.slice(-19),
+            {
+              time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+              inbound: +(Math.max(10, last.inbound + (Math.random() * 20 - 10))).toFixed(1),
+              outbound: +(Math.max(5, last.outbound + (Math.random() * 15 - 7))).toFixed(1),
+            },
+          ];
+        });
       }
     };
 
@@ -178,7 +211,7 @@ export function useLiveServerMetrics(intervalMs = 3000) {
     return () => { active = false; clearInterval(timer); };
   }, [intervalMs, paused]);
 
-  return { metrics, paused, setPaused, dataSource };
+  return { metrics, paused, setPaused, dataSource, trafficHistory };
 }
 
 // ─── Ping results ─────────────────────────────────────────────────────────────
@@ -200,26 +233,49 @@ const UPSTREAM_SERVERS = [
   { server: "208.67.222.222", label: "OpenDNS" },
 ];
 
-export function useLivePing(intervalMs = 3000) {
+export function useLivePing(intervalMs = 4000) {
   const [results, setResults] = useState<PingResult[]>(() =>
     UPSTREAM_SERVERS.map((s) => ({ ...s, latency: null, status: "pending" as const, history: [] }))
   );
 
   useEffect(() => {
-    const ping = () => {
-      setResults((prev) =>
-        prev.map((r) => {
-          const timeout = Math.random() > 0.96;
-          const base = r.server.startsWith("1.1") ? 12 : r.server.startsWith("8.8") ? 18 : r.server.startsWith("9.9") ? 22 : 28;
-          const latency = timeout ? null : Math.max(1, Math.round(base + (Math.random() * 20 - 5)));
-          const newHistory = [...r.history, latency ?? 0].slice(-20);
-          return { ...r, latency, status: timeout ? "timeout" : "ok", history: newHistory };
-        })
-      );
+    let active = true;
+
+    const ping = async () => {
+      try {
+        const bridgeResults = await fetchPingResults();
+        if (!active) return;
+        setResults((prev) =>
+          prev.map((r) => {
+            const found = bridgeResults.find((b) => b.server === r.server);
+            if (!found) return r;
+            const newHistory = [...r.history, found.latency ?? 0].slice(-20);
+            return {
+              ...r,
+              latency: found.latency,
+              status: found.status,
+              history: newHistory,
+            };
+          })
+        );
+      } catch {
+        if (!active) return;
+        // Fallback: simulate
+        setResults((prev) =>
+          prev.map((r) => {
+            const timeout = Math.random() > 0.96;
+            const base = r.server.startsWith("1.1") ? 12 : r.server.startsWith("8.8") ? 18 : r.server.startsWith("9.9") ? 22 : 28;
+            const latency = timeout ? null : Math.max(1, Math.round(base + (Math.random() * 20 - 5)));
+            const newHistory = [...r.history, latency ?? 0].slice(-20);
+            return { ...r, latency, status: timeout ? "timeout" : "ok", history: newHistory };
+          })
+        );
+      }
     };
+
     ping();
     const timer = setInterval(ping, intervalMs);
-    return () => clearInterval(timer);
+    return () => { active = false; clearInterval(timer); };
   }, [intervalMs]);
 
   return results;
