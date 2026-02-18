@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useBridgeUrl } from "@/hooks/use-bridge-url";
+import { pingBridge } from "@/lib/unbound-bridge";
 
 interface ApiToken {
   id: string;
@@ -23,6 +25,21 @@ function generateToken(): string {
 }
 
 export default function SettingsPage() {
+  const { url: bridgeUrl, setUrl: setBridgeUrlState } = useBridgeUrl();
+  const [bridgeInput, setBridgeInput] = useState(bridgeUrl);
+  const [bridgePingStatus, setBridgePingStatus] = useState<"idle" | "checking" | "ok" | "fail">("idle");
+
+  const testBridge = async () => {
+    setBridgePingStatus("checking");
+    const ok = await pingBridge();
+    setBridgePingStatus(ok ? "ok" : "fail");
+    setTimeout(() => setBridgePingStatus("idle"), 4000);
+  };
+
+  const saveBridgeUrl = () => {
+    setBridgeUrlState(bridgeInput);
+  };
+
   const [oktaDomain, setOktaDomain] = useState("");
   const [oktaClientId, setOktaClientId] = useState("");
   const [oktaSecret, setOktaSecret] = useState("");
@@ -110,6 +127,49 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 max-w-3xl">
+      {/* Bridge Connection */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Server className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Unbound Bridge Connection</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-5">
+          URL of the local HTTP bridge that runs alongside Unbound and exposes <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/stats</code>, <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/info</code>, and <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/logs</code>. Saved to browser localStorage.
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            value={bridgeInput}
+            onChange={(e) => setBridgeInput(e.target.value)}
+            placeholder="http://localhost:8080"
+            className={inputClass + " flex-1"}
+          />
+          <button
+            onClick={testBridge}
+            disabled={bridgePingStatus === "checking"}
+            className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap disabled:opacity-50"
+          >
+            {bridgePingStatus === "checking" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : bridgePingStatus === "ok" ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+            ) : bridgePingStatus === "fail" ? (
+              <XCircle className="h-3.5 w-3.5 text-destructive" />
+            ) : null}
+            {bridgePingStatus === "checking" ? "Testing…" : bridgePingStatus === "ok" ? "Reachable!" : bridgePingStatus === "fail" ? "Unreachable" : "Test Connection"}
+          </button>
+          <button
+            onClick={saveBridgeUrl}
+            className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Save className="h-3.5 w-3.5" /> Save
+          </button>
+        </div>
+        {bridgePingStatus === "fail" && (
+          <p className="mt-2 text-[11px] text-destructive">
+            Could not reach the bridge. Make sure <code className="font-mono">node unbound-bridge.js</code> is running at that address and CORS is enabled.
+          </p>
+        )}
+      </motion.div>
       {/* Okta SSO */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
         <div className="flex items-center gap-2 mb-1">
