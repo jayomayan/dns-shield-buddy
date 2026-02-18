@@ -310,8 +310,8 @@ function readLogs(limit) {
 function runUnboundControl(args, cb) {
   exec('unbound-control ' + args, function(err, stdout, stderr) {
     if (!err) return cb(null, stdout);
-    exec('sudo unbound-control ' + args, function(err2, stdout2, stderr2) {
-      cb(err2, stdout2, stderr2);
+    exec('sudo unbound-control ' + args, function(err2, stdout2) {
+      cb(err2, stdout2);
     });
   });
 }
@@ -319,9 +319,17 @@ function runUnboundControl(args, cb) {
 function getStats() {
   return new Promise(function(resolve, reject) {
     runUnboundControl('stats_noreset', function(err, stdout) {
-      if (err) return reject(new Error('unbound-control stats_noreset failed: ' + err.message + '. Ensure unbound-control is installed and the control socket is enabled (remote-control: control-enable: yes).'));
+      if (err) return reject(new Error('unbound-control stats_noreset failed: ' + err.message + '. Ensure remote-control is enabled in unbound.conf.'));
       const raw = {};
-...
+      stdout.split('\n').forEach(function(line) {
+        var eq = line.indexOf('=');
+        if (eq !== -1) raw[line.substring(0, eq).trim()] = line.substring(eq + 1).trim();
+      });
+      resolve(raw);
+    });
+  });
+}
+
 // ─── Cache flush ──────────────────────────────────────────────────────────────
 function flushCache() {
   return new Promise(function(resolve, reject) {
