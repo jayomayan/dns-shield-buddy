@@ -192,3 +192,24 @@ export async function fetchPingResults(): Promise<PingServerResult[]> {
   if (!res.ok) throw new Error(`Bridge /ping returned ${res.status}`);
   return await res.json();
 }
+
+export interface DnsQueryResult {
+  domain: string;
+  type: string;
+  status: "NOERROR" | "NXDOMAIN" | "REFUSED" | "SERVFAIL" | string;
+  answers: { name: string; type: string; ttl: number; data: string }[];
+  responseTime: number;
+  server: string;
+  flags: string[];
+  blocked: boolean;
+}
+
+/** Run a real DNS query through the bridge (GET /query?domain=&type=). */
+export async function fetchDnsQuery(domain: string, type = "A"): Promise<DnsQueryResult> {
+  const res = await fetch(
+    `${baseUrl()}/query?domain=${encodeURIComponent(domain)}&type=${encodeURIComponent(type)}`,
+    { signal: AbortSignal.timeout(8000) }
+  );
+  if (!res.ok) throw new Error(`Bridge /query returned ${res.status}`);
+  return await res.json();
+}

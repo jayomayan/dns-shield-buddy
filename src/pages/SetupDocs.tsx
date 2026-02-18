@@ -375,6 +375,33 @@ const server = http.createServer(async (req, res) => {
       const result = await flushCache();
       json(res, result);
 
+    } else if (req.method === 'GET' && url.pathname === '/query') {
+      const domain = url.searchParams.get('domain') || 'google.com';
+      const type = url.searchParams.get('type') || 'A';
+      const start = Date.now();
+      exec(\`dig @127.0.0.1 \${domain} \${type} +noall +answer +authority +stats\`, (err, stdout) => {
+        const responseTime = Date.now() - start;
+        const answers = [];
+        const flags = [];
+        let status = 'NOERROR';
+        let blocked = false;
+        stdout.split('\\n').forEach(line => {
+          // Parse answer/authority records
+          const rr = line.match(/^([\\S]+)\\s+(\\d+)\\s+IN\\s+(\\S+)\\s+(.+)$/);
+          if (rr && !line.startsWith(';')) {
+            answers.push({ name: rr[1], ttl: parseInt(rr[2]), type: rr[3], data: rr[4].trim() });
+          }
+          // Parse status
+          const statusMatch = line.match(/status: (\\w+)/);
+          if (statusMatch) status = statusMatch[1];
+          // Parse flags
+          const flagMatch = line.match(/flags: ([^;]+)/);
+          if (flagMatch) flags.push(...flagMatch[1].trim().split(/\\s+/));
+        });
+        if (status === 'NXDOMAIN' || status === 'REFUSED') blocked = true;
+        json(res, { domain, type, status, answers, responseTime, server: '127.0.0.1', flags, blocked });
+      });
+
     } else if (req.method === 'POST' && url.pathname === '/rules') {
       // TODO: apply local_zone rules via unbound-control
       json(res, { ok: true, message: 'Rules applied' });
