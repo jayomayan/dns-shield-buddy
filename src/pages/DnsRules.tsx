@@ -4,10 +4,11 @@ import {
   Gamepad2, MessageCircle, Video, ShoppingBag, Skull, Bug, BarChart3,
   Mail, Pickaxe, Globe, Layers, ChevronDown, ChevronUp, RotateCcw,
   Pencil, X, Check, FolderPlus, RefreshCw, CheckCircle2, XCircle, Loader2,
+  FlaskConical, Clock, Server, AlertCircle, ChevronRight,
 } from "lucide-react";
 import { whitelistRules, blacklistRules, categoryBlacklists, type CategoryBlacklist } from "@/lib/mock-data";
 import { motion, AnimatePresence } from "framer-motion";
-import { pushRules } from "@/lib/unbound-bridge";
+import { pushRules, fetchDnsQuery, type DnsQueryResult } from "@/lib/unbound-bridge";
 
 type Tab = "categories" | "custom" | "whitelist";
 
@@ -169,6 +170,172 @@ function CategoryCard({
         )}
       </AnimatePresence>
     </motion.div>
+  );
+}
+
+const DNS_TYPES = ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "PTR", "NS", "SOA"];
+
+function DnsQueryTester() {
+  const [domain, setDomain] = useState("");
+  const [type, setType] = useState("A");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<DnsQueryResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<{ domain: string; type: string; result: DnsQueryResult }[]>([]);
+
+  const run = async () => {
+    const d = domain.trim().replace(/\.$/, "");
+    if (!d) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await fetchDnsQuery(d, type);
+      setResult(res);
+      setHistory((prev) => [{ domain: d, type, result: res }, ...prev].slice(0, 10));
+    } catch (e: any) {
+      setError(e.message || "Query failed — bridge may be offline");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statusColor = (s: string) => {
+    if (s === "NOERROR") return "text-success bg-success/10 border-success/20";
+    if (s === "NXDOMAIN") return "text-destructive bg-destructive/10 border-destructive/20";
+    if (s === "REFUSED") return "text-destructive bg-destructive/10 border-destructive/20";
+    return "text-warning bg-warning/10 border-warning/20";
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="p-4 border-b border-border flex items-center gap-2">
+        <FlaskConical className="h-4 w-4 text-primary" />
+        <h3 className="text-sm font-semibold">DNS Query Test</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 font-mono">LIVE · via bridge</span>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {/* Input row */}
+        <div className="flex gap-2">
+          <input
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            placeholder="e.g. google.com, ads.doubleclick.net"
+            className="flex-1 px-3 py-2 bg-muted border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+            onKeyDown={(e) => e.key === "Enter" && run()}
+          />
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="px-3 py-2 bg-muted border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary w-24"
+          >
+            {DNS_TYPES.map((t) => <option key={t}>{t}</option>)}
+          </select>
+          <button
+            onClick={run}
+            disabled={loading || !domain.trim()}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
+            {loading ? "Querying…" : "Run Query"}
+          </button>
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-destructive">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Result */}
+        {result && (
+          <div className="space-y-3">
+            {/* Summary row */}
+            <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusColor(result.status)}`}>
+                {result.status}
+              </span>
+              {result.blocked && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-destructive/10 text-destructive border-destructive/20">
+                  BLOCKED
+                </span>
+              )}
+              <span className="font-mono text-sm font-semibold">{result.domain}</span>
+              <span className="text-xs text-muted-foreground">IN {result.type}</span>
+              <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{result.responseTime}ms</span>
+                <span className="flex items-center gap-1"><Server className="h-3 w-3" />{result.server}</span>
+              </div>
+            </div>
+
+            {/* Flags */}
+            {result.flags?.length > 0 && (
+              <div className="flex gap-1.5 flex-wrap">
+                {result.flags.map((f) => (
+                  <span key={f} className="px-2 py-0.5 rounded text-[10px] font-mono bg-muted border border-border text-muted-foreground">{f}</span>
+                ))}
+              </div>
+            )}
+
+            {/* Answer records */}
+            {result.answers.length > 0 ? (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <table className="w-full text-xs font-mono">
+                  <thead>
+                    <tr className="bg-muted/30 border-b border-border">
+                      <th className="text-left px-3 py-2 text-muted-foreground font-medium">Name</th>
+                      <th className="text-left px-3 py-2 text-muted-foreground font-medium">Type</th>
+                      <th className="text-left px-3 py-2 text-muted-foreground font-medium">TTL</th>
+                      <th className="text-left px-3 py-2 text-muted-foreground font-medium">Data</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.answers.map((a, i) => (
+                      <tr key={i} className="border-b border-border/50 last:border-0 hover:bg-muted/20">
+                        <td className="px-3 py-2 text-muted-foreground">{a.name}</td>
+                        <td className="px-3 py-2">
+                          <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary">{a.type}</span>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">{a.ttl}s</td>
+                        <td className="px-3 py-2 text-foreground font-semibold">{a.data}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center py-2">No answer records</p>
+            )}
+          </div>
+        )}
+
+        {/* History */}
+        {history.length > 0 && (
+          <div>
+            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide mb-2">Recent queries</p>
+            <div className="flex flex-wrap gap-2">
+              {history.map((h, i) => (
+                <button
+                  key={i}
+                  onClick={() => { setDomain(h.domain); setType(h.type); setResult(h.result); setError(null); }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono border transition-colors hover:bg-muted ${
+                    h.result.blocked || h.result.status !== "NOERROR"
+                      ? "text-destructive border-destructive/20 bg-destructive/5"
+                      : "text-muted-foreground border-border bg-background"
+                  }`}
+                >
+                  <ChevronRight className="h-3 w-3" />
+                  {h.domain} {h.type}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -552,6 +719,8 @@ export default function DnsRules() {
           )}
         </div>
       )}
+      {/* DNS Query Tester */}
+      <DnsQueryTester />
     </div>
   );
 }
