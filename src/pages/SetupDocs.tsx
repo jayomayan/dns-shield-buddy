@@ -96,23 +96,25 @@ sudo systemctl status unbound`,
     id: "s4",
     title: "Enable Remote Control",
     description: "Set up unbound-control for remote management from the Web UI.",
-    command: `# Generate control certificates
+    command: `# Step 1 — Generate TLS certificates for unbound-control
 sudo unbound-control-setup
 
-# Add to unbound.conf (already included in generated config):
-# remote-control:
-#     control-enable: yes
-#     control-interface: 127.0.0.1
-#     control-port: 8953
-#     server-key-file: "/etc/unbound/unbound_server.key"
-#     server-cert-file: "/etc/unbound/unbound_server.pem"
-#     control-key-file: "/etc/unbound/unbound_control.key"
-#     control-cert-file: "/etc/unbound/unbound_control.pem"
+# Step 2 — Add this block to /etc/unbound/unbound.conf
+#           (paste it before the last closing brace)
+remote-control:
+    control-enable: yes
+    control-interface: 127.0.0.1
+    control-port: 8953
+    server-key-file: "/etc/unbound/unbound_server.key"
+    server-cert-file: "/etc/unbound/unbound_server.pem"
+    control-key-file: "/etc/unbound/unbound_control.key"
+    control-cert-file: "/etc/unbound/unbound_control.pem"
 
-# Restart Unbound
+# Step 3 — Validate config & restart Unbound
+sudo unbound-checkconf
 sudo systemctl restart unbound
 
-# Test remote control
+# Step 4 — Verify it works (should print "version: ..." and "status: running")
 sudo unbound-control status`,
     details: [
       "Remote control enables the Web UI to manage Unbound (start, stop, reload, stats)",
@@ -961,6 +963,56 @@ export default function SetupDocs() {
                 <pre className="bg-background border border-border rounded-lg p-4 pr-12 text-xs font-mono text-muted-foreground overflow-x-auto leading-relaxed whitespace-pre">
                   {BRIDGE_NGINX}
                 </pre>
+              </div>
+            </div>
+
+            {/* ── Fix Stats HTTP 500 ── */}
+            <div className="bg-card border border-destructive/30 rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+                <h3 className="text-sm font-semibold text-destructive">Fixing Stats / Cache Flush HTTP 500</h3>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                These endpoints fail when <code className="px-1 py-0.5 bg-muted rounded font-mono text-[11px]">unbound-control</code> can't
+                connect because remote-control is not configured in <code className="px-1 py-0.5 bg-muted rounded font-mono text-[11px]">unbound.conf</code>.
+                Follow these steps in order:
+              </p>
+              <div className="space-y-3">
+                {([
+                  { label: "1. Generate TLS certificates", cmd: "sudo unbound-control-setup", id: "fix-1" },
+                  {
+                    label: "2. Add this block to /etc/unbound/unbound.conf",
+                    cmd: [
+                      "remote-control:",
+                      "    control-enable: yes",
+                      "    control-interface: 127.0.0.1",
+                      "    control-port: 8953",
+                      '    server-key-file: "/etc/unbound/unbound_server.key"',
+                      '    server-cert-file: "/etc/unbound/unbound_server.pem"',
+                      '    control-key-file: "/etc/unbound/unbound_control.key"',
+                      '    control-cert-file: "/etc/unbound/unbound_control.pem"',
+                    ].join("\n"),
+                    id: "fix-2",
+                  },
+                  { label: "3. Validate config and restart Unbound", cmd: "sudo unbound-checkconf && sudo systemctl restart unbound", id: "fix-3" },
+                  { label: "4. Verify unbound-control works", cmd: "sudo unbound-control status", id: "fix-4" },
+                  { label: "5. Redeploy bridge script (copy from above, then run)", cmd: "sudo cp unbound-bridge.js /opt/unbound-bridge/ && sudo systemctl restart unbound-bridge", id: "fix-5" },
+                ] as { label: string; cmd: string; id: string }[]).map(({ label, cmd, id }) => (
+                  <div key={id}>
+                    <p className="text-xs font-medium text-foreground mb-1">{label}</p>
+                    <div className="relative">
+                      <button
+                        onClick={() => copyCommand(cmd, id)}
+                        className="absolute top-1.5 right-1.5 z-10 p-1 rounded bg-muted/80 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {copiedCmd === id ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+                      </button>
+                      <pre className="bg-background border border-border rounded-lg p-3 pr-8 text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap leading-relaxed">
+                        {cmd}
+                      </pre>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
