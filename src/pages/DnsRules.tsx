@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Shield, ShieldX, Plus, Search, ToggleLeft, ToggleRight, Trash2,
   Gamepad2, MessageCircle, Video, ShoppingBag, Skull, Bug, BarChart3,
   Mail, Pickaxe, Globe, Layers, ChevronDown, ChevronUp, RotateCcw,
-  Pencil, X, Check, FolderPlus,
+  Pencil, X, Check, FolderPlus, RefreshCw, CheckCircle2, XCircle, Loader2,
 } from "lucide-react";
 import { whitelistRules, blacklistRules, categoryBlacklists, type CategoryBlacklist } from "@/lib/mock-data";
 import { motion, AnimatePresence } from "framer-motion";
+import { pushRules } from "@/lib/unbound-bridge";
 
 type Tab = "categories" | "custom" | "whitelist";
 
@@ -200,6 +201,38 @@ export default function DnsRules() {
   useEffect(() => { localStorage.setItem("dns-whitelist-rules", JSON.stringify(wRules)); }, [wRules]);
   useEffect(() => { localStorage.setItem("dns-blacklist-rules", JSON.stringify(bRules)); }, [bRules]);
 
+  // ── Sync to Unbound bridge ──────────────────────────────────────────────────
+  const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "ok" | "fail">("idle");
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resetSyncRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const syncToUnbound = useCallback(async (
+    currentCategories: CategoryBlacklist[],
+    currentBRules: typeof bRules,
+    currentWRules: typeof wRules,
+  ) => {
+    setSyncStatus("syncing");
+    try {
+      await pushRules({
+        blacklist: currentBRules.map((r) => ({ domain: r.domain, enabled: r.enabled, category: r.category ?? "Custom" })),
+        whitelist: currentWRules.map((r) => ({ domain: r.domain, enabled: r.enabled })),
+        categories: currentCategories.map((c) => ({ name: c.name, enabled: c.enabled, domains: c.domains })),
+      });
+      setSyncStatus("ok");
+    } catch {
+      setSyncStatus("fail");
+    }
+    if (resetSyncRef.current) clearTimeout(resetSyncRef.current);
+    resetSyncRef.current = setTimeout(() => setSyncStatus("idle"), 4000);
+  }, []);
+
+  // Debounce sync: 800ms after any rule change
+  useEffect(() => {
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => syncToUnbound(categories, bRules, wRules), 800);
+    return () => { if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current); };
+  }, [categories, bRules, wRules, syncToUnbound]);
+
   const filteredCustom = bRules.filter((r) => r.domain.toLowerCase().includes(search.toLowerCase()));
   const filteredWhitelist = wRules.filter((r) => r.domain.toLowerCase().includes(search.toLowerCase()));
   const filteredCategories = categories.filter((c) =>
@@ -308,6 +341,22 @@ export default function DnsRules() {
           >
             <RotateCcw className="h-3.5 w-3.5" /> Reset to defaults
           </button>
+          {/* Sync status indicator */}
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+            syncStatus === "syncing" ? "bg-primary/10 text-primary border-primary/20" :
+            syncStatus === "ok" ? "bg-success/10 text-success border-success/20" :
+            syncStatus === "fail" ? "bg-destructive/10 text-destructive border-destructive/20" :
+            "bg-muted text-muted-foreground border-border"
+          }`}>
+            {syncStatus === "syncing" ? <Loader2 className="h-3 w-3 animate-spin" /> :
+             syncStatus === "ok" ? <CheckCircle2 className="h-3 w-3" /> :
+             syncStatus === "fail" ? <XCircle className="h-3 w-3" /> :
+             <RefreshCw className="h-3 w-3" />}
+            {syncStatus === "syncing" ? "Syncing…" :
+             syncStatus === "ok" ? "Synced to Unbound" :
+             syncStatus === "fail" ? "Sync failed — bridge offline" :
+             "Auto-sync enabled"}
+          </div>
           <span className="text-xs text-muted-foreground font-mono">
             {totalBlocked} domains blocked
           </span>
