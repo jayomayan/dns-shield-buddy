@@ -305,17 +305,19 @@ export function useLiveQueryLogs(intervalMs = 2000) {
         const bridgeLogs = await fetchUnboundLogs(20);
         if (!active) return;
 
-        // Only add truly new entries
+        // Guard: bridge must return an array of objects with required fields
+        if (!Array.isArray(bridgeLogs)) throw new Error("Invalid /logs response");
+
         const newEntries: QueryLog[] = bridgeLogs
-          .filter((e) => !seenIdsRef.current.has(e.id))
+          .filter((e) => e && e.id && e.domain && !seenIdsRef.current.has(e.id))
           .map((e) => ({
-            id: e.id,
-            timestamp: e.timestamp,
-            clientIp: e.clientIp,
+            id: String(e.id),
+            timestamp: e.timestamp || new Date().toISOString(),
+            clientIp: e.clientIp || "unknown",
             domain: e.domain,
-            type: e.type as QueryLog["type"],
-            status: e.status,
-            responseTime: e.responseTime,
+            type: (e.type as QueryLog["type"]) || "A",
+            status: e.status === "blocked" ? "blocked" : "allowed",
+            responseTime: Number(e.responseTime) || 0,
           }));
 
         if (newEntries.length > 0) {

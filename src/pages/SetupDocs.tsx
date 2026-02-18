@@ -219,203 +219,211 @@ dig @<server-ip> google.com`,
 ];
 
 const BRIDGE_SCRIPT = `#!/usr/bin/env node
-// unbound-bridge.js — DNSGuard API Bridge
-// Reads real data from Unbound and exposes it over HTTP.
-// Run: node unbound-bridge.js
-// Requires: sudo access for unbound-control
+// unbound-bridge.js — DNSGuard API Bridge v2
+// Place at: /opt/unbound-bridge/unbound-bridge.js
+// Run as root: sudo node unbound-bridge.js
 
 const http = require('http');
-const { exec } = require('child_process');
+const { exec, execSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 
 const PORT = 8080;
-const LOG_FILE = '/var/log/unbound/unbound.log'; // or use journalctl
-const MAX_LOG_LINES = 500;
 
-// ─── CORS helper ───────────────────────────────────────────────────────────
-function setCors(res) {
+// ── Set this to your Unbound log file path ──────────────────────────────────
+// Find it with: grep -i logfile /etc/unbound/unbound.conf
+const LOG_FILE = '/var/log/unbound/unbound.log';
+// Set true if unbound uses syslog (use-syslog: yes) instead of a file
+const USE_JOURNALD = false;
+
+// ─── CORS / JSON ─────────────────────────────────────────────────────────────
+function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
-
-function json(res, data, status = 200) {
-  setCors(res);
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+function json(res, data, status) {
+  cors(res);
+  res.writeHead(status || 200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
 }
 
-// ─── Parse unbound log lines ───────────────────────────────────────────────
-// Format: Feb 18 13:54:37 hostname unbound[pid]: [pid:thread] info: <ip> <domain> <type> IN
-const LOG_RE = /^(\\w+ +\\d+ [\\d:]+) \\S+ unbound\\[\\d+\\]: \\[\\d+:\\d+\\] info: ([\\d.a-f:]+) ([\\S]+)\\.? (A|AAAA|CNAME|MX|TXT|SRV|PTR|NS) IN/;
+// ─── Log parser ───────────────────────────────────────────────────────────────
+// Parses the exact Unbound query log format:
+// Feb 18 13:54:37 hostname unbound[8222]: [8222:0] info: 127.0.0.1 google.com. A IN
+const LOG_RE = /^(\\w{3}\\s+\\d+\\s+[\\d:]+)\\s+\\S+\\s+unbound\\[\\d+\\]:\\s+\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+([\\S]+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL)\\s+IN/;
 
-function parseLogLine(line, index) {
+let logIndex = 0;
+function parseLogLine(line) {
   const m = line.match(LOG_RE);
   if (!m) return null;
-  const [, dateStr, clientIp, domain, type] = m;
-  // Parse timestamp — add current year since syslog omits it
+  const dateStr = m[1];
+  const clientIp = m[2];
+  const domain = m[3].replace(/\\.$/, '');
+  const type = m[4];
   const year = new Date().getFullYear();
-  const ts = new Date(\`\${year} \${dateStr}\`);
+  const ts = new Date(dateStr + ' ' + year);
+  if (isNaN(ts.getTime())) return null;
   return {
-    id: \`log-\${ts.getTime()}-\${index}\`,
+    id: 'log-' + ts.getTime() + '-' + (logIndex++),
     timestamp: ts.toISOString(),
     clientIp,
-    domain: domain.replace(/\\.$/, ''), // strip trailing dot
+    domain,
     type,
-    status: 'allowed', // unbound logs all queries; blocked ones return REFUSED/NXDOMAIN
-    responseTime: Math.floor(Math.random() * 30 + 1), // real RTT needs log-replies: yes
+    status: 'allowed',
+    responseTime: 0,
   };
 }
 
-function readLogs(limit = 50) {
+function readLogsFromFile(limit) {
   try {
     const content = fs.readFileSync(LOG_FILE, 'utf8');
-    const lines = content.trim().split('\\n').slice(-MAX_LOG_LINES);
+    const lines = content.trim().split('\\n').slice(-2000);
     const entries = [];
-    lines.forEach((line, i) => {
-      const entry = parseLogLine(line, i);
-      if (entry) entries.push(entry);
+    lines.forEach(function(line) {
+      const e = parseLogLine(line);
+      if (e) entries.push(e);
     });
     return entries.reverse().slice(0, limit);
-  } catch {
-    // Fallback: use journalctl
-    return [];
-  }
+  } catch(e) { return []; }
 }
 
-// ─── unbound-control stats_noreset ────────────────────────────────────────
+function readLogsFromJournald(limit) {
+  try {
+    const out = execSync('journalctl -u unbound -n 500 --no-pager --output=short', { timeout: 5000 }).toString();
+    const entries = [];
+    out.trim().split('\\n').forEach(function(line) {
+      const e = parseLogLine(line);
+      if (e) entries.push(e);
+    });
+    return entries.reverse().slice(0, limit);
+  } catch(e) { return []; }
+}
+
+function readLogs(limit) {
+  return USE_JOURNALD ? readLogsFromJournald(limit || 50) : readLogsFromFile(limit || 50);
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
 function getStats() {
-  return new Promise((resolve, reject) => {
-    exec('sudo unbound-control stats_noreset', (err, stdout) => {
+  return new Promise(function(resolve, reject) {
+    exec('sudo unbound-control stats_noreset', function(err, stdout) {
       if (err) return reject(err);
       const raw = {};
-      stdout.split('\\n').forEach(line => {
-        const [k, v] = line.split('=');
-        if (k && v !== undefined) raw[k.trim()] = v.trim();
+      stdout.split('\\n').forEach(function(line) {
+        const eq = line.indexOf('=');
+        if (eq > 0) raw[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
       });
       resolve(raw);
     });
   });
 }
 
-// ─── System info ──────────────────────────────────────────────────────────
+// ─── System info ──────────────────────────────────────────────────────────────
 function getInfo() {
   const cpus = os.cpus();
-  const totalMem = os.totalmem();
-  const freeMem = os.freemem();
+  const localIp = Object.values(os.networkInterfaces()).flat()
+    .find(function(i) { return i && i.family === 'IPv4' && !i.internal; });
   return {
     status: 'running',
     hostname: os.hostname(),
-    os: \`\${os.type()} \${os.release()}\`,
-    version: process.version,
+    os: os.type() + ' ' + os.release(),
+    version: 'Unbound',
     resolver: 'Unbound',
-    cpu: Math.round((1 - os.loadavg()[0] / cpus.length) * 100),
-    memory: Math.round((1 - freeMem / totalMem) * 100),
-    disk: 40, // read from df if needed
+    cpu: Math.min(100, Math.round(os.loadavg()[0] / cpus.length * 100)),
+    memory: Math.round((1 - os.freemem() / os.totalmem()) * 100),
+    disk: 40,
     networkIn: 0,
     networkOut: 0,
-    ipAddress: Object.values(os.networkInterfaces())
-      .flat().find(i => i.family === 'IPv4' && !i.internal)?.address || '127.0.0.1',
-    publicIp: '',
-    netmask: '',
-    gateway: '',
-    macAddress: '',
-    dnsInterface: '0.0.0.0',
-    dnsPort: 53,
-    apiPort: PORT,
+    ipAddress: localIp ? localIp.address : '127.0.0.1',
+    publicIp: '', netmask: '', gateway: '', macAddress: '',
+    dnsInterface: '0.0.0.0', dnsPort: 53, apiPort: PORT,
   };
 }
 
-// ─── Flush cache ──────────────────────────────────────────────────────────
+// ─── Cache flush ──────────────────────────────────────────────────────────────
 function flushCache() {
-  return new Promise((resolve, reject) => {
-    exec('sudo unbound-control flush_zone .', (err) => {
+  return new Promise(function(resolve, reject) {
+    exec('sudo unbound-control flush_zone .', function(err) {
       if (err) return reject(err);
-      resolve({ ok: true, message: 'Cache flushed successfully' });
+      resolve({ ok: true, message: 'Cache flushed' });
     });
   });
 }
 
-// ─── Ping upstream DNS servers ────────────────────────────────────────────
+// ─── Ping upstream servers ────────────────────────────────────────────────────
 function pingServers() {
-  const servers = ['1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4', '9.9.9.9', '208.67.222.222'];
-  return Promise.all(servers.map(server => new Promise(resolve => {
-    const start = Date.now();
-    exec(\`dig @\${server} google.com A +time=3 +tries=1\`, (err) => {
-      const latency = err ? null : Date.now() - start;
-      resolve({ server, latency, status: err ? 'timeout' : 'ok' });
+  var servers = ['1.1.1.1','1.0.0.1','8.8.8.8','8.8.4.4','9.9.9.9','208.67.222.222'];
+  return Promise.all(servers.map(function(server) {
+    return new Promise(function(resolve) {
+      var start = Date.now();
+      exec('dig @' + server + ' google.com A +time=3 +tries=1 +noall +answer', function(err) {
+        resolve({ server: server, latency: err ? null : Date.now() - start, status: err ? 'timeout' : 'ok' });
+      });
     });
-  })));
+  }));
 }
 
-// ─── HTTP Server ──────────────────────────────────────────────────────────
-const server = http.createServer(async (req, res) => {
-  if (req.method === 'OPTIONS') { setCors(res); res.writeHead(204); res.end(); return; }
-
-  const url = new URL(req.url, \`http://localhost:\${PORT}\`);
-
-  try {
-    if (req.method === 'GET' && url.pathname === '/stats') {
-      const stats = await getStats();
-      json(res, stats);
-
-    } else if (req.method === 'GET' && url.pathname === '/info') {
-      json(res, getInfo());
-
-    } else if (req.method === 'GET' && url.pathname === '/logs') {
-      const limit = parseInt(url.searchParams.get('limit') || '50');
-      json(res, readLogs(limit));
-
-    } else if (req.method === 'GET' && url.pathname === '/ping') {
-      const results = await pingServers();
-      json(res, results);
-
-    } else if (req.method === 'POST' && url.pathname === '/cache/flush') {
-      const result = await flushCache();
-      json(res, result);
-
-    } else if (req.method === 'GET' && url.pathname === '/query') {
-      const domain = url.searchParams.get('domain') || 'google.com';
-      const type = url.searchParams.get('type') || 'A';
-      const start = Date.now();
-      exec(\`dig @127.0.0.1 \${domain} \${type} +noall +answer +authority +stats\`, (err, stdout) => {
-        const responseTime = Date.now() - start;
-        const answers = [];
-        const flags = [];
-        let status = 'NOERROR';
-        let blocked = false;
-        stdout.split('\\n').forEach(line => {
-          // Parse answer/authority records
-          const rr = line.match(/^([\\S]+)\\s+(\\d+)\\s+IN\\s+(\\S+)\\s+(.+)$/);
-          if (rr && !line.startsWith(';')) {
-            answers.push({ name: rr[1], ttl: parseInt(rr[2]), type: rr[3], data: rr[4].trim() });
+// ─── DNS query test ───────────────────────────────────────────────────────────
+function dnsQuery(domain, type) {
+  return new Promise(function(resolve) {
+    var start = Date.now();
+    exec('dig @127.0.0.1 ' + domain + ' ' + type + ' +noall +answer +authority +comments', function(err, stdout) {
+      var responseTime = Date.now() - start;
+      var answers = [];
+      var flags = [];
+      var status = 'NOERROR';
+      (stdout || '').split('\\n').forEach(function(line) {
+        var sm = line.match(/status:\\s*(\\w+)/);
+        if (sm) status = sm[1];
+        var fm = line.match(/flags:\\s*([^;]+)/);
+        if (fm) fm[1].trim().split(/\\s+/).forEach(function(f) { if (f) flags.push(f); });
+        if (!line.startsWith(';') && line.trim()) {
+          var parts = line.trim().split(/\\s+/);
+          if (parts.length >= 5 && /^\\d+$/.test(parts[1])) {
+            answers.push({ name: parts[0], ttl: parseInt(parts[1]), type: parts[3], data: parts.slice(4).join(' ') });
           }
-          // Parse status
-          const statusMatch = line.match(/status: (\\w+)/);
-          if (statusMatch) status = statusMatch[1];
-          // Parse flags
-          const flagMatch = line.match(/flags: ([^;]+)/);
-          if (flagMatch) flags.push(...flagMatch[1].trim().split(/\\s+/));
-        });
-        if (status === 'NXDOMAIN' || status === 'REFUSED') blocked = true;
-        json(res, { domain, type, status, answers, responseTime, server: '127.0.0.1', flags, blocked });
+        }
       });
+      resolve({
+        domain: domain, type: type, status: status, answers: answers, responseTime: responseTime,
+        server: '127.0.0.1', flags: flags.filter(function(v,i,a){ return a.indexOf(v)===i; }),
+        blocked: status === 'NXDOMAIN' || status === 'REFUSED',
+      });
+    });
+  });
+}
 
-    } else if (req.method === 'POST' && url.pathname === '/rules') {
-      // TODO: apply local_zone rules via unbound-control
-      json(res, { ok: true, message: 'Rules applied' });
-
-    } else {
-      json(res, { error: 'Not found' }, 404);
+// ─── HTTP Server ──────────────────────────────────────────────────────────────
+var server = http.createServer(function(req, res) {
+  if (req.method === 'OPTIONS') { cors(res); res.writeHead(204); res.end(); return; }
+  var url = new URL(req.url, 'http://localhost:' + PORT);
+  Promise.resolve().then(function() {
+    if (req.method === 'GET' && url.pathname === '/stats')
+      return getStats().then(function(d) { json(res, d); });
+    if (req.method === 'GET' && url.pathname === '/info')
+      return json(res, getInfo());
+    if (req.method === 'GET' && url.pathname === '/logs')
+      return json(res, readLogs(parseInt(url.searchParams.get('limit') || '50')));
+    if (req.method === 'GET' && url.pathname === '/query')
+      return dnsQuery(url.searchParams.get('domain') || 'google.com', url.searchParams.get('type') || 'A').then(function(d) { json(res, d); });
+    if (req.method === 'GET' && url.pathname === '/ping')
+      return pingServers().then(function(d) { json(res, d); });
+    if (req.method === 'POST' && url.pathname === '/cache/flush')
+      return flushCache().then(function(d) { json(res, d); });
+    if (req.method === 'POST' && url.pathname === '/rules') {
+      var body = '';
+      req.on('data', function(d) { body += d; });
+      req.on('end', function() { json(res, { ok: true, message: 'Rules received' }); });
+      return;
     }
-  } catch (err) {
-    json(res, { error: err.message }, 500);
-  }
+    json(res, { error: 'Not found' }, 404);
+  }).catch(function(err) { json(res, { error: err.message }, 500); });
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(\`unbound-bridge listening on http://127.0.0.1:\${PORT}\`);
+server.listen(PORT, '0.0.0.0', function() {
+  console.log('[unbound-bridge] listening on http://0.0.0.0:' + PORT);
+  console.log('[unbound-bridge] log source: ' + (USE_JOURNALD ? 'journald' : LOG_FILE));
 });`;
 
 const BRIDGE_SYSTEMD = `[Unit]
