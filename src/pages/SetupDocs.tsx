@@ -308,20 +308,23 @@ function readLogs(limit) {
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 function runUnboundControl(args, cb) {
-  exec('unbound-control ' + args, function(err, stdout, stderr) {
+  exec('unbound-control ' + args, function(err, stdout) {
     if (!err) return cb(null, stdout);
     exec('sudo unbound-control ' + args, function(err2, stdout2) {
-      cb(err2, stdout2);
+      cb(err2, stdout2 || '');
     });
   });
 }
 
 function getStats() {
-  return new Promise(function(resolve, reject) {
+  return new Promise(function(resolve) {
     runUnboundControl('stats_noreset', function(err, stdout) {
-      if (err) return reject(new Error('unbound-control stats_noreset failed: ' + err.message + '. Ensure remote-control is enabled in unbound.conf.'));
-      const raw = {};
-      stdout.split('\n').forEach(function(line) {
+      if (err || !stdout) {
+        // Return empty stats — UI degrades gracefully instead of returning HTTP 500
+        return resolve({ _unbound_control_error: err ? err.message : 'empty output' });
+      }
+      var raw = {};
+      stdout.split('\\n').forEach(function(line) {
         var eq = line.indexOf('=');
         if (eq !== -1) raw[line.substring(0, eq).trim()] = line.substring(eq + 1).trim();
       });
@@ -332,10 +335,10 @@ function getStats() {
 
 // ─── Cache flush ──────────────────────────────────────────────────────────────
 function flushCache() {
-  return new Promise(function(resolve, reject) {
+  return new Promise(function(resolve) {
     runUnboundControl('flush_zone .', function(err) {
-      if (err) return reject(new Error('Cache flush failed: ' + err.message));
-      resolve({ ok: true, message: 'Cache flushed' });
+      if (err) return resolve({ ok: false, message: 'flush_zone failed: ' + err.message + '. Run: sudo unbound-control-setup && sudo systemctl restart unbound' });
+      resolve({ ok: true, message: 'Cache flushed successfully' });
     });
   });
 }
@@ -387,7 +390,7 @@ function dnsQuery(domain, type) {
 // Writes /etc/unbound/local.d/dnsguard-blacklist.conf and reloads Unbound.
 // Blacklisted domains → always_refuse; whitelisted domains are excluded from blocking.
 function applyRules(rules) {
-  return new Promise(function(resolve, reject) {
+  return new Promise(function(resolve) {
     try {
       var whitelist = (rules.whitelist || [])
         .filter(function(r) { return r.enabled; })
@@ -395,14 +398,12 @@ function applyRules(rules) {
 
       var blocked = {};
 
-      // Collect from custom blacklist
       (rules.blacklist || []).forEach(function(r) {
         if (!r.enabled) return;
         var d = r.domain.replace(/^\\*\\./, '').toLowerCase();
         if (whitelist.indexOf(d) === -1) blocked[d] = true;
       });
 
-      // Collect from categories
       (rules.categories || []).forEach(function(cat) {
         if (!cat.enabled) return;
         (cat.domains || []).forEach(function(domain) {
@@ -418,17 +419,16 @@ function applyRules(rules) {
 
       var confPath = '/etc/unbound/local.d/dnsguard-blacklist.conf';
       fs.mkdirSync('/etc/unbound/local.d', { recursive: true });
-      fs.writeFileSync(confPath, lines.join('\n') + '\n', 'utf8');
+      fs.writeFileSync(confPath, lines.join('\\n') + '\\n', 'utf8');
 
-      // Reload Unbound to apply new rules (no restart needed)
       runUnboundControl('reload', function(err) {
         if (err) {
-          return reject(new Error('Rules written but reload failed: ' + err.message));
+          return resolve({ ok: false, message: 'Rules written (' + Object.keys(blocked).length + ' domains) but reload failed: ' + err.message });
         }
         resolve({ ok: true, message: 'Applied ' + Object.keys(blocked).length + ' blocked domains, Unbound reloaded' });
       });
     } catch(e) {
-      reject(e);
+      resolve({ ok: false, message: 'Rules error: ' + e.message });
     }
   });
 }
@@ -456,11 +456,7 @@ var server = http.createServer(function(req, res) {
       req.on('end', function() {
         try {
           var rules = JSON.parse(body);
-          applyRules(rules).then(function(result) {
-            json(res, result);
-          }).catch(function(err) {
-            json(res, { ok: false, message: err.message }, 500);
-          });
+          applyRules(rules).then(function(result) { json(res, result); });
         } catch(e) {
           json(res, { ok: false, message: 'Invalid JSON: ' + e.message }, 400);
         }
@@ -893,6 +889,15 @@ export default function SetupDocs() {
                 Reads logs from <code className="px-1 py-0.5 bg-muted rounded font-mono text-[11px]">/var/log/unbound/unbound.log</code> and
                 calls <code className="px-1 py-0.5 bg-muted rounded font-mono text-[11px]">unbound-control</code> for stats/flush.
               </p>
+              <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20 flex items-start gap-2 mb-2">
+                <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                <div className="text-xs text-destructive space-y-1">
+                  <p className="font-semibold">If Stats or Cache Flush return HTTP 500, or Rules Sync returns HTTP 404:</p>
+                  <p>Copy this updated script, replace your bridge file, then run:</p>
+                  <code className="block bg-destructive/10 rounded px-2 py-1 font-mono mt-1">sudo cp unbound-bridge.js /opt/unbound-bridge/<br/>sudo systemctl restart unbound-bridge</code>
+                  <p className="mt-1">If Stats/Cache Flush still fail, enable remote-control: <code className="font-mono">sudo unbound-control-setup && sudo systemctl restart unbound</code></p>
+                </div>
+              </div>
               <div className="p-3 rounded-lg bg-warning/5 border border-warning/20 flex items-start gap-2 mb-3">
                 <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
                 <p className="text-xs text-warning">
