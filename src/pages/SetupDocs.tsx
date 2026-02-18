@@ -335,6 +335,119 @@ function getStats() {
   });
 }
 
+// ─── System Info ─────────────────────────────────────────────────────────────
+function getInfo() {
+  // CPU usage (average across all cores, sampled over 100ms)
+  var cpus = os.cpus();
+  var cpuUsage = 0;
+  try {
+    var t1 = cpus.map(function(c) { return c.times; });
+    // Blocking sleep 100ms for a delta sample
+    var end = Date.now() + 100;
+    while (Date.now() < end) {}
+    var cpus2 = os.cpus();
+    var idle = 0, total = 0;
+    cpus2.forEach(function(c, i) {
+      var dt = Object.keys(c.times).reduce(function(s, k) { return s + c.times[k] - t1[i][k]; }, 0);
+      idle += c.times.idle - t1[i].idle;
+      total += dt;
+    });
+    cpuUsage = total > 0 ? Math.round((1 - idle / total) * 100) : 0;
+  } catch(e) { cpuUsage = 0; }
+
+  // Memory
+  var totalMem = os.totalmem();
+  var freeMem = os.freemem();
+  var memPct = Math.round((1 - freeMem / totalMem) * 100);
+
+  // Disk usage via df
+  var diskPct = 0;
+  try {
+    var dfOut = execSync('df -h / --output=pcent 2>/dev/null | tail -1', { timeout: 3000 }).toString().trim().replace('%','');
+    diskPct = parseInt(dfOut) || 0;
+  } catch(e) {}
+
+  // Network traffic (bytes/sec) via /proc/net/dev
+  var networkIn = 0, networkOut = 0;
+  try {
+    var netDev = fs.readFileSync('/proc/net/dev', 'utf8');
+    var lines = netDev.trim().split('\\n').slice(2);
+    lines.forEach(function(line) {
+      var parts = line.trim().split(/\\s+/);
+      var iface = parts[0].replace(':', '');
+      if (iface !== 'lo') {
+        networkIn += parseInt(parts[1]) || 0;   // receive bytes
+        networkOut += parseInt(parts[9]) || 0;  // transmit bytes
+      }
+    });
+    // Convert to MB/s (snapshot, not delta — divide by uptime for rough average)
+    var uptime = os.uptime();
+    networkIn = parseFloat((networkIn / uptime / 1024 / 1024).toFixed(2));
+    networkOut = parseFloat((networkOut / uptime / 1024 / 1024).toFixed(2));
+  } catch(e) {}
+
+  // Hostname, OS
+  var hostname = os.hostname();
+  var osName = '';
+  try { osName = execSync('lsb_release -sd 2>/dev/null || uname -sr', { timeout: 2000 }).toString().trim().replace(/"/g,''); } catch(e) { osName = os.type() + ' ' + os.release(); }
+
+  // Unbound version
+  var version = '';
+  try { version = execSync('unbound -V 2>&1 | head -1', { timeout: 2000 }).toString().trim(); } catch(e) { version = 'unknown'; }
+
+  // Network addresses
+  var ipAddress = '', netmask = '', macAddress = '', dnsInterface = '';
+  var ifaces = os.networkInterfaces();
+  Object.keys(ifaces).forEach(function(iface) {
+    if (iface === 'lo') return;
+    (ifaces[iface] || []).forEach(function(addr) {
+      if (addr.family === 'IPv4' && !ipAddress) {
+        ipAddress = addr.address;
+        netmask = addr.netmask;
+        macAddress = addr.mac;
+        dnsInterface = iface;
+      }
+    });
+  });
+
+  // Gateway
+  var gateway = '';
+  try { gateway = execSync("ip route | awk '/default/ {print $3}' | head -1", { timeout: 2000 }).toString().trim(); } catch(e) {}
+
+  // Public IP
+  var publicIp = '';
+  try { publicIp = execSync('curl -s --max-time 3 https://api.ipify.org 2>/dev/null || echo ""', { timeout: 5000 }).toString().trim(); } catch(e) {}
+
+  // DNS port & API port from unbound.conf
+  var dnsPort = 53, apiPort = 8080;
+  try {
+    var confTxt = fs.readFileSync('/etc/unbound/unbound.conf', 'utf8');
+    var pm = confTxt.match(/port:\\s*(\\d+)/);
+    if (pm) dnsPort = parseInt(pm[1]);
+  } catch(e) {}
+
+  return {
+    status: 'running',
+    hostname: hostname,
+    version: version,
+    resolver: 'Unbound',
+    os: osName,
+    cpu: cpuUsage,
+    memory: memPct,
+    disk: diskPct,
+    networkIn: networkIn,
+    networkOut: networkOut,
+    ipAddress: ipAddress,
+    publicIp: publicIp,
+    netmask: netmask,
+    gateway: gateway,
+    macAddress: macAddress,
+    dnsInterface: dnsInterface,
+    dnsPort: dnsPort,
+    apiPort: apiPort,
+  };
+}
+
 // ─── Cache flush ──────────────────────────────────────────────────────────────
 function flushCache() {
   return new Promise(function(resolve) {
