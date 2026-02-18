@@ -307,47 +307,26 @@ function readLogs(limit) {
 }
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
-function getStats() {
-  return new Promise(function(resolve, reject) {
-    exec('sudo unbound-control stats_noreset', function(err, stdout) {
-      if (err) return reject(err);
-      const raw = {};
-      stdout.split('\\n').forEach(function(line) {
-        const eq = line.indexOf('=');
-        if (eq > 0) raw[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
-      });
-      resolve(raw);
+function runUnboundControl(args, cb) {
+  exec('unbound-control ' + args, function(err, stdout, stderr) {
+    if (!err) return cb(null, stdout);
+    exec('sudo unbound-control ' + args, function(err2, stdout2, stderr2) {
+      cb(err2, stdout2, stderr2);
     });
   });
 }
 
-// ─── System info ──────────────────────────────────────────────────────────────
-function getInfo() {
-  const cpus = os.cpus();
-  const localIp = Object.values(os.networkInterfaces()).flat()
-    .find(function(i) { return i && i.family === 'IPv4' && !i.internal; });
-  return {
-    status: 'running',
-    hostname: os.hostname(),
-    os: os.type() + ' ' + os.release(),
-    version: 'Unbound',
-    resolver: 'Unbound',
-    cpu: Math.min(100, Math.round(os.loadavg()[0] / cpus.length * 100)),
-    memory: Math.round((1 - os.freemem() / os.totalmem()) * 100),
-    disk: 40,
-    networkIn: 0,
-    networkOut: 0,
-    ipAddress: localIp ? localIp.address : '127.0.0.1',
-    publicIp: '', netmask: '', gateway: '', macAddress: '',
-    dnsInterface: '0.0.0.0', dnsPort: 53, apiPort: PORT,
-  };
-}
-
+function getStats() {
+  return new Promise(function(resolve, reject) {
+    runUnboundControl('stats_noreset', function(err, stdout) {
+      if (err) return reject(new Error('unbound-control stats_noreset failed: ' + err.message + '. Ensure unbound-control is installed and the control socket is enabled (remote-control: control-enable: yes).'));
+      const raw = {};
+...
 // ─── Cache flush ──────────────────────────────────────────────────────────────
 function flushCache() {
   return new Promise(function(resolve, reject) {
-    exec('sudo unbound-control flush_zone .', function(err) {
-      if (err) return reject(err);
+    runUnboundControl('flush_zone .', function(err) {
+      if (err) return reject(new Error('Cache flush failed: ' + err.message));
       resolve({ ok: true, message: 'Cache flushed' });
     });
   });
@@ -434,16 +413,9 @@ function applyRules(rules) {
       fs.writeFileSync(confPath, lines.join('\n') + '\n', 'utf8');
 
       // Reload Unbound to apply new rules (no restart needed)
-      // Try unbound-control directly first; fall back to sudo
-      exec('unbound-control reload', function(err) {
+      runUnboundControl('reload', function(err) {
         if (err) {
-          exec('sudo unbound-control reload', function(err2) {
-            if (err2) {
-              return reject(new Error('Rules written but reload failed: ' + err2.message));
-            }
-            resolve({ ok: true, message: 'Applied ' + Object.keys(blocked).length + ' blocked domains, Unbound reloaded' });
-          });
-          return;
+          return reject(new Error('Rules written but reload failed: ' + err.message));
         }
         resolve({ ok: true, message: 'Applied ' + Object.keys(blocked).length + ' blocked domains, Unbound reloaded' });
       });
