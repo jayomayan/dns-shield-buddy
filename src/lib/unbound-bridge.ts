@@ -138,6 +138,28 @@ export async function fetchUnboundLogs(limit = 50): Promise<BridgeLogEntry[]> {
   return await res.json();
 }
 
+
+export interface RulesPayload {
+  blacklist: { domain: string; enabled: boolean; category: string }[];
+  whitelist: { domain: string; enabled: boolean }[];
+  categories: { name: string; enabled: boolean; domains: string[] }[];
+}
+
+/**
+ * Push the full ruleset to the bridge (POST /rules).
+ * The bridge writes local-zone entries into Unbound via unbound-control and reloads.
+ */
+export async function pushRules(rules: RulesPayload): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch(`${baseUrl()}/rules`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rules),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`Bridge /rules returned ${res.status}`);
+  return await res.json();
+}
+
 /** Check if the bridge is reachable. */
 export async function pingBridge(): Promise<boolean> {
   try {
