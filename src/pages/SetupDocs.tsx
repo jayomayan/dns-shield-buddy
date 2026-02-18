@@ -126,27 +126,29 @@ sudo unbound-control status`,
     id: "s5",
     title: "Configure DNS Filtering Rules",
     description: "Set up blacklists, whitelists, and category-based filtering.",
-    command: `# Unbound uses local-zone and local-data directives for filtering
+    command: `# IMPORTANT: Add this line to /etc/unbound/unbound.conf (inside server: block)
+# so Unbound loads DNSGuard-managed rules from the local.d directory:
+#
+#     include-toplevel: "/etc/unbound/local.d/*.conf"
+#
+# Create the directory:
+sudo mkdir -p /etc/unbound/local.d
 
-# Block a domain (returns NXDOMAIN):
-# local-zone: "ads.example.com" always_nxdomain
+# Validate and restart Unbound after adding the include:
+sudo unbound-checkconf
+sudo systemctl restart unbound
 
-# Block an entire zone:
-# local-zone: "doubleclick.net" always_refuse
-
-# Allow specific domain (whitelist via forward):
-# forward-zone:
-#     name: "trusted.com"
-#     forward-addr: 1.1.1.1
-
-# DNSGuard manages these rules via the Web UI
-# Rules are written to /etc/unbound/local.d/*.conf`,
+# DNSGuard bridge will write rules to:
+# /etc/unbound/local.d/dnsguard-blacklist.conf
+# and auto-reload Unbound via: unbound-control reload`,
     details: [
-      "Use the DNS Rules page to manage categories (Social Media, Gaming, Ads, etc.)",
-      "Custom blacklist entries are added as local-zone directives",
-      "Whitelist entries bypass filtering via forward zones",
-      "Rules are applied on Unbound reload — no restart needed",
+      "REQUIRED: Add 'include-toplevel: \"/etc/unbound/local.d/*.conf\"' to unbound.conf",
+      "The bridge writes local-zone directives (always_refuse) for each blocked domain",
+      "Whitelist entries are excluded from the generated block file",
+      "Rules sync automatically when you save changes in the DNS Rules page",
+      "Unbound is reloaded (not restarted) so rules apply instantly with no downtime",
     ],
+    warning: "Without the include-toplevel directive in unbound.conf, rules pushed from the UI will NOT take effect even if the bridge reports success.",
   },
   {
     id: "s6",
@@ -394,6 +396,56 @@ function dnsQuery(domain, type) {
   });
 }
 
+// ─── Apply Rules to Unbound ───────────────────────────────────────────────────
+// Writes /etc/unbound/local.d/dnsguard-blacklist.conf and reloads Unbound.
+// Blacklisted domains → always_refuse; whitelisted domains are excluded from blocking.
+function applyRules(rules) {
+  return new Promise(function(resolve, reject) {
+    try {
+      var whitelist = (rules.whitelist || [])
+        .filter(function(r) { return r.enabled; })
+        .map(function(r) { return r.domain.replace(/^\\*\\./, '').toLowerCase(); });
+
+      var blocked = {};
+
+      // Collect from custom blacklist
+      (rules.blacklist || []).forEach(function(r) {
+        if (!r.enabled) return;
+        var d = r.domain.replace(/^\\*\\./, '').toLowerCase();
+        if (whitelist.indexOf(d) === -1) blocked[d] = true;
+      });
+
+      // Collect from categories
+      (rules.categories || []).forEach(function(cat) {
+        if (!cat.enabled) return;
+        (cat.domains || []).forEach(function(domain) {
+          var d = domain.replace(/^\\*\\./, '').toLowerCase();
+          if (whitelist.indexOf(d) === -1) blocked[d] = true;
+        });
+      });
+
+      var lines = ['# DNSGuard managed rules — do not edit manually', '# Generated: ' + new Date().toISOString(), ''];
+      Object.keys(blocked).forEach(function(domain) {
+        lines.push('local-zone: "' + domain + '" always_refuse');
+      });
+
+      var confPath = '/etc/unbound/local.d/dnsguard-blacklist.conf';
+      fs.mkdirSync('/etc/unbound/local.d', { recursive: true });
+      fs.writeFileSync(confPath, lines.join('\\n') + '\\n', 'utf8');
+
+      // Reload Unbound to apply new rules (no restart needed)
+      exec('sudo unbound-control reload', function(err) {
+        if (err) {
+          return reject(new Error('Rules written but reload failed: ' + err.message));
+        }
+        resolve({ ok: true, message: 'Applied ' + Object.keys(blocked).length + ' blocked domains, Unbound reloaded' });
+      });
+    } catch(e) {
+      reject(e);
+    }
+  });
+}
+
 // ─── HTTP Server ──────────────────────────────────────────────────────────────
 var server = http.createServer(function(req, res) {
   if (req.method === 'OPTIONS') { cors(res); res.writeHead(204); res.end(); return; }
@@ -414,7 +466,18 @@ var server = http.createServer(function(req, res) {
     if (req.method === 'POST' && url.pathname === '/rules') {
       var body = '';
       req.on('data', function(d) { body += d; });
-      req.on('end', function() { json(res, { ok: true, message: 'Rules received' }); });
+      req.on('end', function() {
+        try {
+          var rules = JSON.parse(body);
+          applyRules(rules).then(function(result) {
+            json(res, result);
+          }).catch(function(err) {
+            json(res, { ok: false, message: err.message }, 500);
+          });
+        } catch(e) {
+          json(res, { ok: false, message: 'Invalid JSON: ' + e.message }, 400);
+        }
+      });
       return;
     }
     json(res, { error: 'Not found' }, 404);
