@@ -1,8 +1,44 @@
 import { useState } from "react";
-import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBridgeUrl } from "@/hooks/use-bridge-url";
-import { pingBridge } from "@/lib/unbound-bridge";
+
+interface EndpointResult {
+  path: string;
+  label: string;
+  method: "GET" | "POST";
+  status: "pending" | "checking" | "ok" | "fail";
+  latency: number | null;
+  httpCode: number | null;
+  error: string | null;
+}
+
+const ENDPOINTS: Omit<EndpointResult, "status" | "latency" | "httpCode" | "error">[] = [
+  { path: "/stats", label: "Stats", method: "GET" },
+  { path: "/info",  label: "System Info", method: "GET" },
+  { path: "/logs",  label: "Query Logs", method: "GET" },
+  { path: "/ping",  label: "DNS Ping", method: "GET" },
+  { path: "/cache/flush", label: "Cache Flush", method: "POST" },
+  { path: "/rules", label: "Rules Sync", method: "POST" },
+];
+
+async function testEndpoint(baseUrl: string, ep: typeof ENDPOINTS[0]): Promise<EndpointResult> {
+  const start = Date.now();
+  try {
+    const res = await fetch(`${baseUrl}${ep.path}`, {
+      method: ep.method === "POST" ? "POST" : "GET",
+      headers: ep.method === "POST" ? { "Content-Type": "application/json" } : undefined,
+      body: ep.method === "POST" ? JSON.stringify({}) : undefined,
+      signal: AbortSignal.timeout(4000),
+    });
+    const latency = Date.now() - start;
+    // 200-299 and 400 (bad body for POST) are all "reachable"
+    const ok = res.ok || res.status === 400;
+    return { ...ep, status: ok ? "ok" : "fail", latency, httpCode: res.status, error: ok ? null : `HTTP ${res.status}` };
+  } catch (e: unknown) {
+    return { ...ep, status: "fail", latency: null, httpCode: null, error: e instanceof Error ? (e.name === "TimeoutError" ? "Timeout" : "Unreachable") : "Unreachable" };
+  }
+}
 
 interface ApiToken {
   id: string;
@@ -27,13 +63,18 @@ function generateToken(): string {
 export default function SettingsPage() {
   const { url: bridgeUrl, setUrl: setBridgeUrlState } = useBridgeUrl();
   const [bridgeInput, setBridgeInput] = useState(bridgeUrl);
-  const [bridgePingStatus, setBridgePingStatus] = useState<"idle" | "checking" | "ok" | "fail">("idle");
+  const [endpointResults, setEndpointResults] = useState<EndpointResult[] | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
 
-  const testBridge = async () => {
-    setBridgePingStatus("checking");
-    const ok = await pingBridge();
-    setBridgePingStatus(ok ? "ok" : "fail");
-    setTimeout(() => setBridgePingStatus("idle"), 4000);
+  const runEndpointTests = async () => {
+    setIsTesting(true);
+    const base = bridgeInput.replace(/\/$/, "");
+    // Set all to checking
+    setEndpointResults(ENDPOINTS.map((ep) => ({ ...ep, status: "checking", latency: null, httpCode: null, error: null })));
+    // Fire all tests in parallel
+    const results = await Promise.all(ENDPOINTS.map((ep) => testEndpoint(base, ep)));
+    setEndpointResults(results);
+    setIsTesting(false);
   };
 
   const saveBridgeUrl = () => {
@@ -133,10 +174,12 @@ export default function SettingsPage() {
           <Server className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-semibold">Unbound Bridge Connection</h3>
         </div>
-        <p className="text-xs text-muted-foreground mb-5">
-          URL of the local HTTP bridge that runs alongside Unbound and exposes <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/stats</code>, <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/info</code>, <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/logs</code>, <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/ping</code>, and <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/cache/flush</code>. Saved to browser localStorage.
+        <p className="text-xs text-muted-foreground mb-4">
+          URL of the HTTP bridge running alongside Unbound. If using nginx, set this to your server's{" "}
+          <strong>public IP</strong> with the <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/api</code> prefix
+          (e.g. <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">http://1.2.3.4/api</code>). Use <em>localhost:8080</em> only when your browser is on the same machine as the bridge.
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mb-4">
           <input
             value={bridgeInput}
             onChange={(e) => setBridgeInput(e.target.value)}
@@ -144,18 +187,12 @@ export default function SettingsPage() {
             className={inputClass + " flex-1"}
           />
           <button
-            onClick={testBridge}
-            disabled={bridgePingStatus === "checking"}
+            onClick={runEndpointTests}
+            disabled={isTesting}
             className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap disabled:opacity-50"
           >
-            {bridgePingStatus === "checking" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : bridgePingStatus === "ok" ? (
-              <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-            ) : bridgePingStatus === "fail" ? (
-              <XCircle className="h-3.5 w-3.5 text-destructive" />
-            ) : null}
-            {bridgePingStatus === "checking" ? "Testing…" : bridgePingStatus === "ok" ? "Reachable!" : bridgePingStatus === "fail" ? "Unreachable" : "Test Connection"}
+            {isTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            {isTesting ? "Testing…" : "Test Connection"}
           </button>
           <button
             onClick={saveBridgeUrl}
@@ -164,11 +201,60 @@ export default function SettingsPage() {
             <Save className="h-3.5 w-3.5" /> Save
           </button>
         </div>
-        {bridgePingStatus === "fail" && (
-          <p className="mt-2 text-[11px] text-destructive">
-            Could not reach the bridge. Make sure <code className="font-mono">node unbound-bridge.js</code> is running at that address and CORS is enabled.
-          </p>
-        )}
+
+        {/* Per-endpoint results */}
+        <AnimatePresence>
+          {endpointResults && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="border border-border rounded-lg divide-y divide-border">
+                {endpointResults.map((ep) => (
+                  <div key={ep.path} className="flex items-center justify-between px-4 py-2.5 text-xs">
+                    <div className="flex items-center gap-2.5">
+                      {ep.status === "checking" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                      {ep.status === "ok"       && <CheckCircle2 className="h-3.5 w-3.5 text-success" />}
+                      {ep.status === "fail"     && <XCircle className="h-3.5 w-3.5 text-destructive" />}
+                      <span className="font-medium">{ep.label}</span>
+                      <code className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        {ep.method} {ep.path}
+                      </code>
+                    </div>
+                    <div className="flex items-center gap-3 text-muted-foreground">
+                      {ep.httpCode !== null && (
+                        <span className={ep.status === "ok" ? "text-success" : "text-destructive"}>
+                          HTTP {ep.httpCode}
+                        </span>
+                      )}
+                      {ep.latency !== null && <span>{ep.latency}ms</span>}
+                      {ep.error && ep.status !== "checking" && (
+                        <span className="text-destructive flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" /> {ep.error}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {endpointResults.some((r) => r.status === "fail") && !isTesting && (
+                <div className="flex items-start gap-2 mt-3 p-3 rounded-lg bg-warning/5 border border-warning/20">
+                  <Info className="h-3.5 w-3.5 text-warning mt-0.5 shrink-0" />
+                  <p className="text-[11px] text-warning leading-relaxed">
+                    Some endpoints are unreachable. Make sure nginx has all <code className="font-mono">/api/*</code> location blocks and that <code className="font-mono">unbound-bridge.js</code> is running. POST endpoints may return HTTP 400 with an empty body — that still counts as reachable.
+                  </p>
+                </div>
+              )}
+              {endpointResults.every((r) => r.status === "ok") && !isTesting && (
+                <p className="mt-3 text-[11px] text-success flex items-center gap-1.5">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> All endpoints reachable — dashboard will switch to live data.
+                </p>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
       {/* Okta SSO */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
