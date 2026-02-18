@@ -736,7 +736,22 @@ export default function SetupDocs() {
   };
 
   const copyCommand = (cmd: string, id: string) => {
-    navigator.clipboard.writeText(cmd);
+    const tryFallback = () => {
+      const el = document.createElement("textarea");
+      el.value = cmd;
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(cmd).catch(tryFallback);
+    } else {
+      tryFallback();
+    }
     setCopiedCmd(id);
     setTimeout(() => setCopiedCmd(null), 2000);
   };
