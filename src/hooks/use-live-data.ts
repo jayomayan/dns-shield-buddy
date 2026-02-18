@@ -95,6 +95,48 @@ export function useLiveServerMetrics(intervalMs = 3000) {
   return { metrics, paused, setPaused };
 }
 
+export interface PingResult {
+  server: string;
+  label: string;
+  latency: number | null;
+  status: "ok" | "timeout" | "pending";
+  history: number[];
+}
+
+const UPSTREAM_SERVERS = [
+  { server: "1.1.1.1", label: "Cloudflare Primary" },
+  { server: "1.0.0.1", label: "Cloudflare Secondary" },
+  { server: "8.8.8.8", label: "Google Primary" },
+  { server: "8.8.4.4", label: "Google Secondary" },
+  { server: "9.9.9.9", label: "Quad9" },
+  { server: "208.67.222.222", label: "OpenDNS" },
+];
+
+export function useLivePing(intervalMs = 3000) {
+  const [results, setResults] = useState<PingResult[]>(() =>
+    UPSTREAM_SERVERS.map((s) => ({ ...s, latency: null, status: "pending" as const, history: [] }))
+  );
+
+  useEffect(() => {
+    const ping = () => {
+      setResults((prev) =>
+        prev.map((r) => {
+          const timeout = Math.random() > 0.96;
+          const base = r.server.startsWith("1.1") ? 12 : r.server.startsWith("8.8") ? 18 : r.server.startsWith("9.9") ? 22 : 28;
+          const latency = timeout ? null : Math.max(1, Math.round(base + (Math.random() * 20 - 5)));
+          const newHistory = [...r.history, latency ?? 0].slice(-20);
+          return { ...r, latency, status: timeout ? "timeout" : "ok", history: newHistory };
+        })
+      );
+    };
+    ping();
+    const timer = setInterval(ping, intervalMs);
+    return () => clearInterval(timer);
+  }, [intervalMs]);
+
+  return results;
+}
+
 export function useLiveQueryLogs(intervalMs = 2000) {
   const [logs, setLogs] = useState<QueryLog[]>(() => {
     // Generate initial batch

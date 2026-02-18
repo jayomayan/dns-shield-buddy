@@ -3,6 +3,7 @@ import {
   Shield, ShieldX, Plus, Search, ToggleLeft, ToggleRight, Trash2,
   Gamepad2, MessageCircle, Video, ShoppingBag, Skull, Bug, BarChart3,
   Mail, Pickaxe, Globe, Layers, ChevronDown, ChevronUp, RotateCcw,
+  Pencil, X, Check, FolderPlus,
 } from "lucide-react";
 import { whitelistRules, blacklistRules, categoryBlacklists, type CategoryBlacklist } from "@/lib/mock-data";
 import { motion, AnimatePresence } from "framer-motion";
@@ -35,6 +36,141 @@ const categoryColors: Record<string, string> = {
   "Cryptomining": "text-emerald-400 bg-emerald-400/10 border-emerald-400/20",
 };
 
+function CategoryCard({
+  cat,
+  isExpanded,
+  onToggleExpand,
+  onToggleEnabled,
+  onDeleteCategory,
+  onAddDomain,
+  onDeleteDomain,
+  onEditDescription,
+}: {
+  cat: CategoryBlacklist;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onToggleEnabled: () => void;
+  onDeleteCategory: () => void;
+  onAddDomain: (domain: string) => void;
+  onDeleteDomain: (domain: string) => void;
+  onEditDescription: (desc: string) => void;
+}) {
+  const Icon = categoryIcons[cat.name] || Globe;
+  const colors = categoryColors[cat.name] || "text-muted-foreground bg-muted/50 border-border";
+  const [newDomain, setNewDomain] = useState("");
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [descDraft, setDescDraft] = useState(cat.description);
+
+  return (
+    <motion.div
+      key={cat.id}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`bg-card border rounded-lg overflow-hidden transition-all ${cat.enabled ? "border-border" : "border-border/50 opacity-60"}`}
+    >
+      <div className="p-4 flex items-center gap-3">
+        <div className={`p-2.5 rounded-lg border ${colors}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-semibold">{cat.name}</h4>
+          {editingDesc ? (
+            <div className="flex items-center gap-1 mt-0.5">
+              <input
+                autoFocus
+                value={descDraft}
+                onChange={(e) => setDescDraft(e.target.value)}
+                className="flex-1 text-[11px] bg-muted border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { onEditDescription(descDraft); setEditingDesc(false); }
+                  if (e.key === "Escape") { setDescDraft(cat.description); setEditingDesc(false); }
+                }}
+              />
+              <button onClick={() => { onEditDescription(descDraft); setEditingDesc(false); }} className="text-success hover:text-success/80"><Check className="h-3 w-3" /></button>
+              <button onClick={() => { setDescDraft(cat.description); setEditingDesc(false); }} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+            </div>
+          ) : (
+            <p
+              className="text-[11px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
+              onClick={() => setEditingDesc(true)}
+              title="Click to edit description"
+            >{cat.description}</p>
+          )}
+          <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{cat.domains.length} domains</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onToggleExpand}
+            className="text-muted-foreground hover:text-foreground transition-colors p-1"
+          >
+            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+          <button onClick={onToggleEnabled}>
+            {cat.enabled ? (
+              <ToggleRight className="h-6 w-6 text-success" />
+            ) : (
+              <ToggleLeft className="h-6 w-6 text-muted-foreground" />
+            )}
+          </button>
+          <button onClick={onDeleteCategory} className="text-muted-foreground hover:text-destructive transition-colors p-1">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="border-t border-border"
+          >
+            {/* Add domain input */}
+            <div className="px-3 pt-3 pb-2 flex items-center gap-2">
+              <input
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+                placeholder="Add domain, e.g. *.example.com"
+                className="flex-1 px-3 py-1.5 bg-muted border border-border rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newDomain.trim()) {
+                    onAddDomain(newDomain.trim());
+                    setNewDomain("");
+                  }
+                }}
+              />
+              <button
+                onClick={() => { if (newDomain.trim()) { onAddDomain(newDomain.trim()); setNewDomain(""); } }}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
+              >
+                <Plus className="h-3 w-3" /> Add
+              </button>
+            </div>
+            {/* Domain list */}
+            <div className="px-3 pb-3 max-h-48 overflow-y-auto space-y-1">
+              {cat.domains.map((domain) => (
+                <div key={domain} className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted/30 group">
+                  <span className="font-mono text-xs text-muted-foreground">{domain}</span>
+                  <button
+                    onClick={() => onDeleteDomain(domain)}
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {cat.domains.length === 0 && (
+                <p className="text-center text-xs text-muted-foreground py-4">No domains in this category</p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 export default function DnsRules() {
   const [tab, setTab] = useState<Tab>("categories");
   const [search, setSearch] = useState("");
@@ -55,6 +191,11 @@ export default function DnsRules() {
   });
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
 
+  // New category form state
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatDesc, setNewCatDesc] = useState("");
+
   useEffect(() => { localStorage.setItem("dns-category-blacklists", JSON.stringify(categories)); }, [categories]);
   useEffect(() => { localStorage.setItem("dns-whitelist-rules", JSON.stringify(wRules)); }, [wRules]);
   useEffect(() => { localStorage.setItem("dns-blacklist-rules", JSON.stringify(bRules)); }, [bRules]);
@@ -68,6 +209,38 @@ export default function DnsRules() {
 
   const toggleCategory = (id: string) => {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, enabled: !c.enabled } : c)));
+  };
+
+  const deleteCategory = (id: string) => {
+    setCategories((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const addDomainToCategory = (id: string, domain: string) => {
+    setCategories((prev) => prev.map((c) => c.id === id ? { ...c, domains: [...c.domains, domain] } : c));
+  };
+
+  const deleteDomainFromCategory = (id: string, domain: string) => {
+    setCategories((prev) => prev.map((c) => c.id === id ? { ...c, domains: c.domains.filter((d) => d !== domain) } : c));
+  };
+
+  const editCategoryDescription = (id: string, description: string) => {
+    setCategories((prev) => prev.map((c) => c.id === id ? { ...c, description } : c));
+  };
+
+  const addNewCategory = () => {
+    if (!newCatName.trim()) return;
+    const newCat: CategoryBlacklist = {
+      id: `cat-custom-${Date.now()}`,
+      name: newCatName.trim(),
+      description: newCatDesc.trim() || `Custom category: ${newCatName.trim()}`,
+      enabled: true,
+      domains: [],
+    };
+    setCategories((prev) => [...prev, newCat]);
+    setNewCatName("");
+    setNewCatDesc("");
+    setShowNewCategory(false);
+    setExpandedCat(newCat.id);
   };
 
   const toggleRule = (id: string, list: "whitelist" | "blacklist") => {
@@ -152,7 +325,14 @@ export default function DnsRules() {
             className="w-full pl-10 pr-4 py-2 bg-muted border border-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
-        {tab !== "categories" && (
+        {tab === "categories" ? (
+          <button
+            onClick={() => setShowNewCategory(!showNewCategory)}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <FolderPlus className="h-4 w-4" /> Add Category
+          </button>
+        ) : (
           <button
             onClick={() => setShowAdd(!showAdd)}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
@@ -161,6 +341,34 @@ export default function DnsRules() {
           </button>
         )}
       </div>
+
+      {/* New Category Form */}
+      <AnimatePresence>
+        {showNewCategory && tab === "categories" && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="bg-card border border-border rounded-lg p-4">
+            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2"><FolderPlus className="h-4 w-4 text-primary" /> New Category</h4>
+            <div className="flex items-center gap-3">
+              <input
+                value={newCatName}
+                onChange={(e) => setNewCatName(e.target.value)}
+                placeholder="Category name, e.g. News Sites"
+                className="flex-1 px-4 py-2 bg-muted border border-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                onKeyDown={(e) => e.key === "Enter" && addNewCategory()}
+              />
+              <input
+                value={newCatDesc}
+                onChange={(e) => setNewCatDesc(e.target.value)}
+                placeholder="Description (optional)"
+                className="flex-1 px-4 py-2 bg-muted border border-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                onKeyDown={(e) => e.key === "Enter" && addNewCategory()}
+              />
+              <button onClick={addNewCategory} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
+                Create
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Add Rule Form */}
       <AnimatePresence>
@@ -197,65 +405,22 @@ export default function DnsRules() {
       {/* Category Cards */}
       {tab === "categories" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filteredCategories.map((cat) => {
-            const Icon = categoryIcons[cat.name] || Globe;
-            const colors = categoryColors[cat.name] || "text-muted-foreground bg-muted/50 border-border";
-            const isExpanded = expandedCat === cat.id;
-
-            return (
-              <motion.div
-                key={cat.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`bg-card border rounded-lg overflow-hidden transition-all ${cat.enabled ? "border-border" : "border-border/50 opacity-60"}`}
-              >
-                <div className="p-4 flex items-center gap-3">
-                  <div className={`p-2.5 rounded-lg border ${colors}`}>
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-semibold">{cat.name}</h4>
-                    <p className="text-[11px] text-muted-foreground">{cat.description}</p>
-                    <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{cat.domains.length} domains</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setExpandedCat(isExpanded ? null : cat.id)}
-                      className="text-muted-foreground hover:text-foreground transition-colors p-1"
-                    >
-                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </button>
-                    <button onClick={() => toggleCategory(cat.id)}>
-                      {cat.enabled ? (
-                        <ToggleRight className="h-6 w-6 text-success" />
-                      ) : (
-                        <ToggleLeft className="h-6 w-6 text-muted-foreground" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                <AnimatePresence>
-                  {isExpanded && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="border-t border-border"
-                    >
-                      <div className="p-3 max-h-48 overflow-y-auto space-y-1">
-                        {cat.domains.map((domain) => (
-                          <div key={domain} className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted/30">
-                            <span className="font-mono text-xs text-muted-foreground">{domain}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            );
-          })}
+          {filteredCategories.map((cat) => (
+            <CategoryCard
+              key={cat.id}
+              cat={cat}
+              isExpanded={expandedCat === cat.id}
+              onToggleExpand={() => setExpandedCat(expandedCat === cat.id ? null : cat.id)}
+              onToggleEnabled={() => toggleCategory(cat.id)}
+              onDeleteCategory={() => deleteCategory(cat.id)}
+              onAddDomain={(domain) => addDomainToCategory(cat.id, domain)}
+              onDeleteDomain={(domain) => deleteDomainFromCategory(cat.id, domain)}
+              onEditDescription={(desc) => editCategoryDescription(cat.id, desc)}
+            />
+          ))}
+          {filteredCategories.length === 0 && (
+            <div className="col-span-2 py-12 text-center text-muted-foreground text-sm">No categories found</div>
+          )}
         </div>
       )}
 
