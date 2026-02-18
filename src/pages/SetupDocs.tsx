@@ -431,12 +431,19 @@ function applyRules(rules) {
 
       var confPath = '/etc/unbound/local.d/dnsguard-blacklist.conf';
       fs.mkdirSync('/etc/unbound/local.d', { recursive: true });
-      fs.writeFileSync(confPath, lines.join('\\n') + '\\n', 'utf8');
+      fs.writeFileSync(confPath, lines.join('\n') + '\n', 'utf8');
 
       // Reload Unbound to apply new rules (no restart needed)
-      exec('sudo unbound-control reload', function(err) {
+      // Try unbound-control directly first; fall back to sudo
+      exec('unbound-control reload', function(err) {
         if (err) {
-          return reject(new Error('Rules written but reload failed: ' + err.message));
+          exec('sudo unbound-control reload', function(err2) {
+            if (err2) {
+              return reject(new Error('Rules written but reload failed: ' + err2.message));
+            }
+            resolve({ ok: true, message: 'Applied ' + Object.keys(blocked).length + ' blocked domains, Unbound reloaded' });
+          });
+          return;
         }
         resolve({ ok: true, message: 'Applied ' + Object.keys(blocked).length + ' blocked domains, Unbound reloaded' });
       });
