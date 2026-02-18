@@ -1,7 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search, Download, Pause, Play, Radio } from "lucide-react";
 import { useLiveQueryLogs } from "@/hooks/use-live-data";
-import { AnimatePresence, motion } from "framer-motion";
 
 export default function QueryLogs() {
   const { logs, paused, setPaused, newCount, dataSource } = useLiveQueryLogs(2000);
@@ -48,18 +47,11 @@ export default function QueryLogs() {
           {paused ? "PAUSED" : dataSource === "live" ? "LIVE · unbound" : dataSource === "connecting" ? "CONNECTING…" : "SIMULATED"}
         </div>
 
-        <AnimatePresence>
-          {newCount > 0 && !paused && (
-            <motion.span
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              className="text-[11px] font-mono text-primary"
-            >
-              +{newCount} new
-            </motion.span>
-          )}
-        </AnimatePresence>
+        {newCount > 0 && !paused && (
+          <span className="text-[11px] font-mono text-primary">
+            +{newCount} new
+          </span>
+        )}
 
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
