@@ -1,7 +1,9 @@
-import { Cpu, HardDrive, MemoryStick, Wifi, Play, Square, RotateCcw, Server, Pause, Globe, Activity, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Cpu, HardDrive, MemoryStick, Wifi, Play, Square, RotateCcw, Server, Pause, Globe, Activity, CheckCircle2, XCircle, Clock, Trash2, Loader2 } from "lucide-react";
 import { useLiveServerMetrics, useLivePing } from "@/hooks/use-live-data";
 import { motion } from "framer-motion";
 import { useState } from "react";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { flushCache } from "@/lib/unbound-bridge";
 
 function GaugeRing({ value, label, color, icon: Icon }: { value: number; label: string; color: string; icon: any }) {
   const circumference = 2 * Math.PI * 40;
@@ -29,9 +31,21 @@ function GaugeRing({ value, label, color, icon: Icon }: { value: number; label: 
 }
 
 export default function Monitoring() {
-  const { metrics: serverMetrics, paused, setPaused } = useLiveServerMetrics(2000);
+  const { metrics: serverMetrics, paused, setPaused, trafficHistory } = useLiveServerMetrics(2000);
   const pingResults = useLivePing(4000);
   const [serviceStatus, setServiceStatus] = useState<"running" | "stopped" | "unknown">(serverMetrics.status);
+  const [flushState, setFlushState] = useState<"idle" | "flushing" | "ok" | "fail">("idle");
+
+  const handleFlushCache = async () => {
+    setFlushState("flushing");
+    try {
+      await flushCache();
+      setFlushState("ok");
+    } catch {
+      setFlushState("fail");
+    }
+    setTimeout(() => setFlushState("idle"), 3000);
+  };
 
   return (
     <div className="space-y-6">
@@ -71,6 +85,28 @@ export default function Monitoring() {
           </button>
           <button className="flex items-center gap-2 px-4 py-2 bg-warning/10 text-warning border border-warning/20 rounded-lg text-sm font-medium hover:bg-warning/20 transition-colors">
             <RotateCcw className="h-4 w-4" /> Restart
+          </button>
+          <button
+            onClick={handleFlushCache}
+            disabled={flushState === "flushing"}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+              flushState === "ok"
+                ? "bg-success/10 text-success border-success/20"
+                : flushState === "fail"
+                ? "bg-destructive/10 text-destructive border-destructive/20"
+                : "bg-muted text-muted-foreground border-border hover:text-foreground hover:bg-muted/80"
+            }`}
+          >
+            {flushState === "flushing" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : flushState === "ok" ? (
+              <CheckCircle2 className="h-4 w-4" />
+            ) : flushState === "fail" ? (
+              <XCircle className="h-4 w-4" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+            {flushState === "flushing" ? "Flushing…" : flushState === "ok" ? "Cache Flushed!" : flushState === "fail" ? "Flush Failed" : "Flush Cache"}
           </button>
           <button
             onClick={() => setPaused(!paused)}
@@ -164,6 +200,51 @@ export default function Monitoring() {
               </div>
             ))}
           </div>
+        </div>
+      </motion.div>
+
+      {/* Live Network Traffic Graph */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.25 }}
+        className="bg-card border border-border rounded-lg p-5"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Wifi className="h-4 w-4 text-primary" /> Live Network Traffic
+          </h3>
+          <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary inline-block" /> Inbound MB/s</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-warning inline-block" /> Outbound MB/s</span>
+          </div>
+        </div>
+        <div className="h-40">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={trafficHistory} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+              <defs>
+                <linearGradient id="inGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(190, 95%, 50%)" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="hsl(190, 95%, 50%)" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="outGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(38, 92%, 55%)" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="hsl(38, 92%, 55%)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 14%, 18%)" vertical={false} />
+              <XAxis dataKey="time" tick={{ fontSize: 9, fill: "hsl(215, 15%, 45%)" }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 9, fill: "hsl(215, 15%, 45%)" }} tickLine={false} axisLine={false} unit=" MB/s" />
+              <Tooltip
+                contentStyle={{ background: "hsl(220, 18%, 10%)", border: "1px solid hsl(220, 14%, 18%)", borderRadius: "6px", fontSize: "11px" }}
+                labelStyle={{ color: "hsl(215, 15%, 50%)", marginBottom: "4px" }}
+                itemStyle={{ color: "hsl(210, 20%, 92%)" }}
+                formatter={(val: number) => [`${val.toFixed(1)} MB/s`]}
+              />
+              <Area type="monotone" dataKey="inbound" name="Inbound" stroke="hsl(190, 95%, 50%)" strokeWidth={1.5} fill="url(#inGrad)" dot={false} isAnimationActive={false} />
+              <Area type="monotone" dataKey="outbound" name="Outbound" stroke="hsl(38, 92%, 55%)" strokeWidth={1.5} fill="url(#outGrad)" dot={false} isAnimationActive={false} />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
       </motion.div>
 

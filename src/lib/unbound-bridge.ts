@@ -147,3 +147,26 @@ export async function pingBridge(): Promise<boolean> {
     return false;
   }
 }
+
+/** Flush the Unbound cache via the bridge (POST /cache/flush). */
+export async function flushCache(): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch(`${baseUrl()}/cache/flush`, {
+    method: "POST",
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!res.ok) throw new Error(`Bridge /cache/flush returned ${res.status}`);
+  return await res.json();
+}
+
+export interface PingServerResult {
+  server: string;
+  latency: number | null;
+  status: "ok" | "timeout";
+}
+
+/** Fetch real upstream DNS latency results from the bridge (GET /ping). */
+export async function fetchPingResults(): Promise<PingServerResult[]> {
+  const res = await fetch(`${baseUrl()}/ping`, { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`Bridge /ping returned ${res.status}`);
+  return await res.json();
+}

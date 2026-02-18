@@ -134,7 +134,7 @@ export default function SettingsPage() {
           <h3 className="text-sm font-semibold">Unbound Bridge Connection</h3>
         </div>
         <p className="text-xs text-muted-foreground mb-5">
-          URL of the local HTTP bridge that runs alongside Unbound and exposes <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/stats</code>, <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/info</code>, and <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/logs</code>. Saved to browser localStorage.
+          URL of the local HTTP bridge that runs alongside Unbound and exposes <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/stats</code>, <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/info</code>, <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/logs</code>, <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/ping</code>, and <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/cache/flush</code>. Saved to browser localStorage.
         </p>
         <div className="flex items-center gap-2">
           <input
