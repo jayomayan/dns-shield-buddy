@@ -146,6 +146,12 @@ export default function SettingsPage({ user }: { user: User | null }) {
       log_max_size: maxLogSize,
       notify_blocked: notifyBlocked,
       notify_service: notifyService,
+      db_type: dbType,
+      db_host: dbHost,
+      db_port: dbPort,
+      db_name: dbName,
+      db_user: dbUser,
+      db_password: dbPassword,
     };
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -178,6 +184,12 @@ export default function SettingsPage({ user }: { user: User | null }) {
         if (parsed.notify_blocked !== undefined) setNotifyBlocked(parsed.notify_blocked);
         if (parsed.notify_service !== undefined) setNotifyService(parsed.notify_service);
         if (parsed.api_tokens) setTokens(parsed.api_tokens);
+        if (parsed.db_type) setDbType(parsed.db_type);
+        if (parsed.db_host !== undefined) setDbHost(parsed.db_host || "");
+        if (parsed.db_port !== undefined) setDbPort(parsed.db_port || "5432");
+        if (parsed.db_name !== undefined) setDbName(parsed.db_name || "");
+        if (parsed.db_user !== undefined) setDbUser(parsed.db_user || "");
+        if (parsed.db_password !== undefined) setDbPassword(parsed.db_password || "");
         await saveSettings({
           bridge_url: newUrl || null,
           bridge_api_key: newKey || null,
@@ -191,6 +203,12 @@ export default function SettingsPage({ user }: { user: User | null }) {
           log_max_size: parsed.log_max_size || "500",
           notify_blocked: parsed.notify_blocked ?? true,
           notify_service: parsed.notify_service ?? true,
+          db_type: parsed.db_type || "local",
+          db_host: parsed.db_host || null,
+          db_port: parsed.db_port || null,
+          db_name: parsed.db_name || null,
+          db_user: parsed.db_user || null,
+          db_password: parsed.db_password || null,
         });
         toast({ title: "Config imported", description: "Settings restored and synced to cloud." });
       } catch {
