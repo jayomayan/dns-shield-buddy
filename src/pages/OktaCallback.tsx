@@ -1,86 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Globe, Loader2, XCircle, Copy, Check, Info, Save, Eye, EyeOff, LogIn } from "lucide-react";
-import { getOktaConfig, handleOktaCallback, saveOktaConfig, startOktaLogin, type OktaConfig } from "@/hooks/use-okta-session";
-
-function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      onClick={() => { navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-      className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-    >
-      {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
-    </button>
-  );
-}
-
-function getErrorGuidance(error: string): { text: string; steps?: string[] } | null {
-  const e = error.toLowerCase();
-
-  if (e.includes("proof key for code exchange") || e.includes("pkce") || e.includes("code_challenge")) {
-    return {
-      text: "Okta is configured with 'Client secret + Require PKCE as additional verification'. The token exchange now uses HTTP Basic Auth (clientId:clientSecret) + code_verifier — the correct method for this setup.",
-      steps: [
-        "Enter your Client Secret in the field below (required for confidential clients)",
-        "Click 'Save & Retry Login' — Basic Auth + PKCE will be used automatically",
-        "Your Okta settings look correct: Client Authentication = 'Client secret', PKCE = 'Require PKCE as additional verification'",
-      ],
-    };
-  }
-
-  if (e.includes("client authentication failed") || e.includes("invalid_client")) {
-    return {
-      text: "Client credentials are invalid — either the secret is wrong or the app type is mismatched.",
-      steps: [
-        "If your app is a Web (confidential) app: enter the correct Client Secret below",
-        "If your app is a SPA: clear the Client Secret field and set 'Client authentication' to None (PKCE) in Okta",
-      ],
-    };
-  }
-  if (e.includes("redirect_uri") || e.includes("redirect uri")) {
-    return {
-      text: "The Redirect URI is not registered in Okta.",
-      steps: [
-        "Copy the Redirect URI shown below",
-        "In Okta Admin → Applications → your app → Sign On tab",
-        "Add it to 'Sign-in redirect URIs' and save",
-      ],
-    };
-  }
-  if (e.includes("state mismatch") || e.includes("csrf")) {
-    return { text: "Security state mismatch — can happen in private browsing or when cookies are blocked. Try in a normal browser window." };
-  }
-  if (e.includes("expired")) {
-    return { text: "Login session expired (10-minute PKCE window). Try signing in again." };
-  }
-  if (e.includes("access_denied")) {
-    return {
-      text: "Access denied by Okta.",
-      steps: [
-        "Check that your user is assigned to the application in Okta",
-        "Review the app's sign-on policy in Okta Admin",
-      ],
-    };
-  }
-  return null;
-}
-
+import { Globe, Loader2, XCircle, AlertCircle } from "lucide-react";
+import { getOktaConfig, handleOktaCallback } from "@/hooks/use-okta-session";
 
 export default function OktaCallback() {
-  const navigate   = useNavigate();
-  const [error, setError]   = useState<string | null>(null);
-  const redirectUri = `${window.location.origin}/auth/callback`;
-  const initialConfig = getOktaConfig();
-
-  // Editable fields
-  const [domain,       setDomain]       = useState(initialConfig?.domain       || "");
-  const [clientId,     setClientId]     = useState(initialConfig?.clientId     || "");
-  const [clientSecret, setClientSecret] = useState(initialConfig?.clientSecret || "");
-  const [showSecret,   setShowSecret]   = useState(false);
-  const [saving,       setSaving]       = useState(false);
-  const [saved,        setSaved]        = useState(false);
-  const [retrying,     setRetrying]     = useState(false);
+  const navigate = useNavigate();
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const params   = new URLSearchParams(window.location.search);
@@ -89,46 +14,29 @@ export default function OktaCallback() {
     const errParam = params.get("error");
     const errDesc  = params.get("error_description");
 
-    if (errParam) { setError(errDesc ? `${errDesc} (${errParam})` : errParam); return; }
-    if (!code || !state) { setError("Invalid callback — missing code or state. Please try again."); return; }
+    if (errParam) {
+      setError(errDesc ? `${errDesc} (${errParam})` : errParam);
+      return;
+    }
+    if (!code || !state) {
+      setError("Invalid callback — missing code or state. Please try again.");
+      return;
+    }
 
     const cfg = getOktaConfig();
-    if (!cfg) { setError("No Okta configuration found. Configure it below and retry."); return; }
+    if (!cfg) {
+      setError("No Okta configuration found. Please configure Okta in Settings first.");
+      return;
+    }
 
     handleOktaCallback(code, state, cfg)
       .then(() => navigate("/", { replace: true }))
       .catch((e: Error) => setError(e.message));
-  }, [navigate]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleSaveAndRetry = async () => {
-    if (!domain.trim() || !clientId.trim()) return;
-    setSaving(true);
-    const cfg: OktaConfig = {
-      domain:       domain.trim().replace(/\/$/, ""),
-      clientId:     clientId.trim(),
-      clientSecret: clientSecret.trim() || undefined,
-      enabled:      true,
-    };
-    saveOktaConfig(cfg);
-    setSaved(true);
-    setSaving(false);
-    setTimeout(() => setSaved(false), 2000);
-
-    // Kick off a fresh login attempt
-    setRetrying(true);
-    try {
-      await startOktaLogin(cfg);
-    } catch {
-      setRetrying(false);
-    }
-  };
-
-  const guidance = error ? getErrorGuidance(error) : null;
-  const inputCls = "w-full px-3 py-2 bg-background border border-border rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary";
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="flex flex-col items-center gap-5 text-center max-w-md w-full">
+      <div className="flex flex-col items-center gap-6 text-center max-w-sm w-full">
 
         {/* Logo */}
         <div className="flex items-center gap-3">
@@ -141,108 +49,23 @@ export default function OktaCallback() {
 
         {error ? (
           <div className="bg-card border border-destructive/30 rounded-xl p-5 w-full text-left space-y-4 shadow-sm">
-
-            {/* Error header */}
             <div className="flex items-center gap-2 text-destructive">
               <XCircle className="h-4 w-4 shrink-0" />
               <span className="text-sm font-semibold">Sign-in failed</span>
             </div>
-            <p className="text-[11px] text-muted-foreground font-mono bg-muted/60 px-3 py-2 rounded border border-border break-all">{error}</p>
 
-            {/* Guidance */}
-            {guidance && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/5 border border-warning/20">
-                <Info className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />
-                <div className="space-y-1.5">
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">{guidance.text}</p>
-                  {guidance.steps && (
-                    <ol className="list-decimal list-inside space-y-0.5">
-                      {guidance.steps.map((step, i) => (
-                        <li key={i} className="text-[11px] text-muted-foreground leading-relaxed">{step}</li>
-                      ))}
-                    </ol>
-                  )}
-                </div>
-              </div>
-            )}
+            <p className="text-xs text-muted-foreground font-mono bg-muted/60 px-3 py-2 rounded border border-border break-all">
+              {error}
+            </p>
 
-
-            {/* ─── Editable diagnostic panel ─── */}
-            <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Fix & Retry</p>
-
-              {/* Redirect URI — read-only, copyable */}
-              <div>
-                <label className="text-[11px] text-muted-foreground block mb-1">Redirect URI <span className="text-[10px]">(register this in Okta)</span></label>
-                <div className="flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-lg">
-                  <span className="text-[11px] font-mono flex-1 break-all text-foreground">{redirectUri}</span>
-                  <CopyButton value={redirectUri} />
-                </div>
-              </div>
-
-              {/* Okta Domain */}
-              <div>
-                <label className="text-[11px] text-muted-foreground block mb-1">Okta Domain</label>
-                <input
-                  value={domain}
-                  onChange={(e) => setDomain(e.target.value)}
-                  placeholder="https://your-org.okta.com"
-                  className={inputCls}
-                />
-              </div>
-
-              {/* Client ID */}
-              <div>
-                <label className="text-[11px] text-muted-foreground block mb-1">Client ID</label>
-                <input
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  placeholder="0oa1b2c3EXAMPLE"
-                  className={inputCls}
-                />
-              </div>
-
-              {/* Client Secret */}
-              <div>
-                <label className="text-[11px] text-muted-foreground block mb-1">
-                  Client Secret
-                  <span className="ml-1.5 text-[10px] font-normal opacity-70">(Web/confidential apps only — leave blank for SPA)</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showSecret ? "text" : "password"}
-                    value={clientSecret}
-                    onChange={(e) => setClientSecret(e.target.value)}
-                    placeholder="Leave blank for SPA / PKCE"
-                    className={inputCls + " pr-8"}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSecret((v) => !v)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Save & Retry */}
-              <button
-                onClick={handleSaveAndRetry}
-                disabled={saving || retrying || !domain.trim() || !clientId.trim()}
-                className="w-full flex items-center justify-center gap-2 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
-              >
-                {retrying
-                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Redirecting to Okta…</>
-                  : saved
-                  ? <><Check className="h-3.5 w-3.5" /> Saved — redirecting…</>
-                  : saving
-                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</>
-                  : <><Save className="h-3.5 w-3.5" /><LogIn className="h-3.5 w-3.5" /> Save & Retry Login</>}
-              </button>
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/40 border border-border">
+              <AlertCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Make sure your Okta app has the correct <strong>Sign-in redirect URI</strong>:{" "}
+                <span className="font-mono break-all">{window.location.origin}/auth/callback</span>
+              </p>
             </div>
 
-            {/* Nav buttons */}
             <div className="flex gap-2">
               <button
                 onClick={() => navigate("/", { replace: true })}
@@ -254,7 +77,7 @@ export default function OktaCallback() {
                 onClick={() => navigate("/settings", { replace: true })}
                 className="flex-1 px-3 py-2 text-xs font-medium rounded-md bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition-colors"
               >
-                Full Settings
+                Settings
               </button>
             </div>
           </div>

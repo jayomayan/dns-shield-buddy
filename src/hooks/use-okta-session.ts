@@ -1,32 +1,27 @@
-// Okta OIDC / PKCE authentication helpers
-// Uses the Authorization Code + PKCE flow (no client_secret needed for public SPA clients).
+// Simple Okta OIDC — Authorization Code flow with Client Secret (no PKCE)
 
 const OKTA_CONFIG_KEY  = "okta_config";
 const OKTA_SESSION_KEY = "okta_session";
-const OKTA_PKCE_KEY    = "okta_pkce";
-const PKCE_TTL_MS      = 10 * 60 * 1000; // 10 minutes
+const OKTA_STATE_KEY   = "okta_state";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 export interface OktaConfig {
   domain:        string;  // e.g. https://dev-xxx.okta.com
   clientId:      string;
-  clientSecret?: string;  // optional — only for Web/confidential clients
+  clientSecret?: string;
   enabled:       boolean;
 }
 
 export function getOktaConfig(): OktaConfig | null {
   try {
     const raw = localStorage.getItem(OKTA_CONFIG_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as OktaConfig;
+    return raw ? JSON.parse(raw) as OktaConfig : null;
   } catch { return null; }
 }
 
 export function saveOktaConfig(cfg: OktaConfig): void {
-  try {
-    localStorage.setItem(OKTA_CONFIG_KEY, JSON.stringify(cfg));
-  } catch {}
+  try { localStorage.setItem(OKTA_CONFIG_KEY, JSON.stringify(cfg)); } catch {}
 }
 
 export function clearOktaConfig(): void {
@@ -40,7 +35,7 @@ export interface OktaSession {
   idToken:     string;
   email:       string;
   name:        string;
-  expiresAt:   number; // unix ms
+  expiresAt:   number;
 }
 
 export function getOktaSession(): OktaSession | null {
@@ -48,10 +43,7 @@ export function getOktaSession(): OktaSession | null {
     const raw = localStorage.getItem(OKTA_SESSION_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as OktaSession;
-    if (Date.now() > s.expiresAt) {
-      localStorage.removeItem(OKTA_SESSION_KEY);
-      return null;
-    }
+    if (Date.now() > s.expiresAt) { localStorage.removeItem(OKTA_SESSION_KEY); return null; }
     return s;
   } catch { return null; }
 }
@@ -64,64 +56,30 @@ export function clearOktaSession(): void {
   try { localStorage.removeItem(OKTA_SESSION_KEY); } catch {}
 }
 
-// ─── PKCE helpers ─────────────────────────────────────────────────────────────
-
-function base64urlEncode(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let str = "";
-  for (const b of bytes) str += String.fromCharCode(b);
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-
-async function sha256(plain: string): Promise<ArrayBuffer> {
-  return window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(plain));
-}
-
-function generateCodeVerifier(): string {
-  const arr = new Uint8Array(32);
-  window.crypto.getRandomValues(arr);
-  return base64urlEncode(arr.buffer);
-}
-
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-export async function startOktaLogin(config: OktaConfig): Promise<void> {
-  const stateArr = new Uint8Array(16);
-  window.crypto.getRandomValues(stateArr);
-  const state = base64urlEncode(stateArr.buffer);
+export function startOktaLogin(config: OktaConfig): void {
+  // Generate a random state value for CSRF protection
+  const stateBytes = new Uint8Array(16);
+  window.crypto.getRandomValues(stateBytes);
+  const state = Array.from(stateBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+
+  localStorage.setItem(OKTA_STATE_KEY, state);
 
   const domain      = config.domain.replace(/\/$/, "");
   const redirectUri = `${window.location.origin}/auth/callback`;
 
-  // Confidential clients (client_secret present) with PKCE disabled in Okta:
-  // do NOT send code_challenge — Okta ignores it and issues a non-PKCE code,
-  // then rejects any code_verifier at token time.
-  // Public/SPA clients (no secret): always use PKCE.
-  const usesPkce = !config.clientSecret;
-
-  const paramsObj: Record<string, string> = {
+  const params = new URLSearchParams({
     client_id:     config.clientId,
     response_type: "code",
     scope:         "openid profile email",
     redirect_uri:  redirectUri,
     state,
     nonce:         state,
-  };
+  });
 
-  let codeVerifier: string | null = null;
-  if (usesPkce) {
-    codeVerifier = generateCodeVerifier();
-    const codeChallenge = base64urlEncode(await sha256(codeVerifier));
-    paramsObj.code_challenge        = codeChallenge;
-    paramsObj.code_challenge_method = "S256";
-  }
-
-  localStorage.setItem(OKTA_PKCE_KEY, JSON.stringify({ codeVerifier, state, expiresAt: Date.now() + PKCE_TTL_MS }));
-
-  window.location.href = `${domain}/oauth2/v1/authorize?${new URLSearchParams(paramsObj)}`;
+  window.location.href = `${domain}/oauth2/v1/authorize?${params}`;
 }
-
-
 
 // ─── Callback / token exchange ────────────────────────────────────────────────
 
@@ -130,67 +88,50 @@ export async function handleOktaCallback(
   state:  string,
   config: OktaConfig,
 ): Promise<OktaSession> {
-  const pkceRaw = localStorage.getItem(OKTA_PKCE_KEY);
-  if (!pkceRaw) throw new Error("No session data found — please try signing in again.");
-  const { codeVerifier, state: savedState, expiresAt } = JSON.parse(pkceRaw) as { codeVerifier: string | null; state: string; expiresAt: number };
-  localStorage.removeItem(OKTA_PKCE_KEY);
-  if (expiresAt && Date.now() > expiresAt) throw new Error("Login session expired — please try signing in again.");
-  if (state !== savedState) throw new Error("State mismatch — possible CSRF attack. Please try again.");
+  const savedState = localStorage.getItem(OKTA_STATE_KEY);
+  localStorage.removeItem(OKTA_STATE_KEY);
+
+  if (savedState && state !== savedState) {
+    throw new Error("State mismatch — possible CSRF attack. Please try again.");
+  }
 
   const domain      = config.domain.replace(/\/$/, "");
   const redirectUri = `${window.location.origin}/auth/callback`;
 
-  const tokenBody: Record<string, string> = {
-    grant_type:   "authorization_code",
+  const body = new URLSearchParams({
+    grant_type:    "authorization_code",
     code,
-    redirect_uri: redirectUri,
-  };
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/x-www-form-urlencoded",
-  };
-
-  if (config.clientSecret) {
-    // Confidential client (PKCE disabled in Okta): credentials in POST body, no code_verifier
-    tokenBody.client_id     = config.clientId;
-    tokenBody.client_secret = config.clientSecret;
-  } else {
-    // Public SPA client: PKCE flow — send client_id + code_verifier in body
-    tokenBody.client_id = config.clientId;
-    if (codeVerifier) tokenBody.code_verifier = codeVerifier;
-  }
-
-  const tokenRes = await fetch(`${domain}/oauth2/v1/token`, {
-    method:  "POST",
-    headers,
-    body: new URLSearchParams(tokenBody),
+    redirect_uri:  redirectUri,
+    client_id:     config.clientId,
+    ...(config.clientSecret ? { client_secret: config.clientSecret } : {}),
   });
 
-  console.log("[Okta] Token response status:", tokenRes.status);
+  const res = await fetch(`${domain}/oauth2/v1/token`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
 
-  if (!tokenRes.ok) {
-    const err = await tokenRes.json().catch(() => ({})) as Record<string, string>;
-    console.error("[Okta] Token error response:", err);
-    throw new Error(err.error_description || `Token exchange failed (HTTP ${tokenRes.status})`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as Record<string, string>;
+    throw new Error(err.error_description || `Token exchange failed (HTTP ${res.status})`);
   }
 
-
-
-  const tokens = await tokenRes.json() as {
+  const tokens = await res.json() as {
     access_token: string;
     id_token:     string;
     expires_in:   number;
   };
 
-  // Decode id_token payload (JWT – no signature verification needed client-side)
+  // Decode JWT payload (no signature verification needed client-side)
   const [, payloadB64] = tokens.id_token.split(".");
   const payload = JSON.parse(atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, string>;
 
   const session: OktaSession = {
     accessToken: tokens.access_token,
     idToken:     tokens.id_token,
-    email:       payload.email  || payload.sub || "unknown",
-    name:        payload.name   || payload.email || "Unknown",
+    email:       payload.email || payload.sub || "unknown",
+    name:        payload.name  || payload.email || "Unknown",
     expiresAt:   Date.now() + (tokens.expires_in ?? 3600) * 1000,
   };
 
