@@ -234,17 +234,30 @@ const os = require('os');
 
 const PORT = 8080;
 
+// ── API Authentication ────────────────────────────────────────────────────────
+// Set BRIDGE_API_KEY env variable to require Bearer token auth on all requests.
+// Example:  BRIDGE_API_KEY=my-secret-key node unbound-bridge.js
+// Leave unset to allow unauthenticated access (only do this on a private network).
+const BRIDGE_API_KEY = process.env.BRIDGE_API_KEY || '';
+
 // ── Set this to your Unbound log file path ──────────────────────────────────
 // Find it with: grep -i logfile /etc/unbound/unbound.conf
 const LOG_FILE = '/var/log/unbound/unbound.log';
 // Set true if unbound uses syslog (use-syslog: yes) instead of a file
 const USE_JOURNALD = false;
 
+// ─── Auth middleware ──────────────────────────────────────────────────────────
+function isAuthorized(req) {
+  if (!BRIDGE_API_KEY) return true; // no key configured — allow all
+  var auth = req.headers['authorization'] || '';
+  return auth === 'Bearer ' + BRIDGE_API_KEY;
+}
+
 // ─── CORS / JSON ─────────────────────────────────────────────────────────────
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 function json(res, data, status) {
   cors(res);
@@ -642,6 +655,15 @@ function getLogsSummary() {
 // ─── HTTP Server ──────────────────────────────────────────────────────────────
 var server = http.createServer(function(req, res) {
   if (req.method === 'OPTIONS') { cors(res); res.writeHead(204); res.end(); return; }
+
+  // ── Authenticate ──────────────────────────────────────────────────────────
+  if (!isAuthorized(req)) {
+    cors(res);
+    res.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer realm="unbound-bridge"' });
+    res.end(JSON.stringify({ error: 'Unauthorized — set Authorization: Bearer <BRIDGE_API_KEY>' }));
+    return;
+  }
+
   var url = new URL(req.url, 'http://localhost:' + PORT);
   Promise.resolve().then(function() {
     if (req.method === 'GET' && url.pathname === '/stats')
@@ -678,6 +700,7 @@ var server = http.createServer(function(req, res) {
 server.listen(PORT, '0.0.0.0', function() {
   console.log('[unbound-bridge] listening on http://0.0.0.0:' + PORT);
   console.log('[unbound-bridge] log source: ' + (USE_JOURNALD ? 'journald' : LOG_FILE));
+  console.log('[unbound-bridge] auth: ' + (BRIDGE_API_KEY ? 'Bearer token ENABLED' : 'DISABLED — set BRIDGE_API_KEY env var to secure'));
 });`;
 
 const BRIDGE_SYSTEMD = `[Unit]
@@ -688,6 +711,8 @@ After=network.target unbound.service
 Type=simple
 User=root
 ExecStart=/usr/bin/node /opt/unbound-bridge/unbound-bridge.js
+# ── Set your API key here to secure the bridge ──────────────────────────────
+Environment=BRIDGE_API_KEY=change-me-use-a-long-random-string
 Restart=always
 RestartSec=5
 
@@ -706,15 +731,21 @@ sudo systemctl start unbound-bridge
 
 # Verify it's running
 sudo systemctl status unbound-bridge
-curl http://localhost:8080/stats | head -5`;
+
+# Test with auth (replace with your actual API key from Settings):
+curl -H "Authorization: Bearer change-me-use-a-long-random-string" \\
+     http://localhost:8080/stats | head -5`;
 
 const BRIDGE_NGINX = `# Add inside your server {} block in nginx.conf
+# This proxies /api/* to the bridge and passes the Authorization header.
 location /api/ {
     proxy_pass http://127.0.0.1:8080/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Authorization $http_authorization;
     add_header Access-Control-Allow-Origin *;
+    add_header Access-Control-Allow-Headers "Content-Type, Authorization";
 }`;
 
 const WALKTHROUGH_ITEMS = [

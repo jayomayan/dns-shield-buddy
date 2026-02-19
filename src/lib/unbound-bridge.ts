@@ -2,7 +2,7 @@
 // Fetches real data from the local unbound-bridge HTTP server.
 // The bridge URL is user-configurable and stored in localStorage.
 
-import { getBridgeUrl } from "@/hooks/use-bridge-url";
+import { getBridgeUrl, getBridgeHeaders } from "@/hooks/use-bridge-url";
 
 export interface UnboundRawStats {
   [key: string]: string;
@@ -110,9 +110,19 @@ function baseUrl() {
   return getBridgeUrl();
 }
 
+function authFetch(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, {
+    ...init,
+    headers: {
+      ...getBridgeHeaders(),
+      ...(init?.headers ?? {}),
+    },
+  });
+}
+
 /** Fetch live stats from the bridge (GET /stats). */
 export async function fetchUnboundStats(): Promise<UnboundLiveStats> {
-  const res = await fetch(`${baseUrl()}/stats`, { signal: AbortSignal.timeout(3000) });
+  const res = await authFetch(`${baseUrl()}/stats`, { signal: AbortSignal.timeout(3000) });
   if (!res.ok) throw new Error(`Bridge /stats returned ${res.status}`);
   const raw: UnboundRawStats = await res.json();
   return parseUnboundStats(raw);
@@ -123,7 +133,7 @@ export async function fetchUnboundStats(): Promise<UnboundLiveStats> {
  * Bridge should return a JSON object matching BridgeSystemInfo.
  */
 export async function fetchUnboundInfo(): Promise<Partial<BridgeSystemInfo>> {
-  const res = await fetch(`${baseUrl()}/info`, { signal: AbortSignal.timeout(3000) });
+  const res = await authFetch(`${baseUrl()}/info`, { signal: AbortSignal.timeout(3000) });
   if (!res.ok) throw new Error(`Bridge /info returned ${res.status}`);
   return await res.json();
 }
@@ -133,7 +143,7 @@ export async function fetchUnboundInfo(): Promise<Partial<BridgeSystemInfo>> {
  * Bridge tails the unbound log or uses dump_requestlist and returns an array.
  */
 export async function fetchUnboundLogs(limit = 50): Promise<BridgeLogEntry[]> {
-  const res = await fetch(`${baseUrl()}/logs?limit=${limit}`, { signal: AbortSignal.timeout(3000) });
+  const res = await authFetch(`${baseUrl()}/logs?limit=${limit}`, { signal: AbortSignal.timeout(3000) });
   if (!res.ok) throw new Error(`Bridge /logs returned ${res.status}`);
   return await res.json();
 }
@@ -150,11 +160,10 @@ export interface LogsSummary {
  * Returns per-hour query counts and top blocked domains.
  */
 export async function fetchLogsSummary(): Promise<LogsSummary> {
-  const res = await fetch(`${baseUrl()}/logs/summary`, { signal: AbortSignal.timeout(5000) });
+  const res = await authFetch(`${baseUrl()}/logs/summary`, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) throw new Error(`Bridge /logs/summary returned ${res.status}`);
   return await res.json();
 }
-
 
 export interface RulesPayload {
   blacklist: { domain: string; enabled: boolean; category: string }[];
@@ -167,7 +176,7 @@ export interface RulesPayload {
  * The bridge writes local-zone entries into Unbound via unbound-control and reloads.
  */
 export async function pushRules(rules: RulesPayload): Promise<{ ok: boolean; message: string }> {
-  const res = await fetch(`${baseUrl()}/rules`, {
+  const res = await authFetch(`${baseUrl()}/rules`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(rules),
@@ -180,7 +189,7 @@ export async function pushRules(rules: RulesPayload): Promise<{ ok: boolean; mes
 /** Check if the bridge is reachable. */
 export async function pingBridge(): Promise<boolean> {
   try {
-    const res = await fetch(`${baseUrl()}/stats`, { signal: AbortSignal.timeout(2000) });
+    const res = await authFetch(`${baseUrl()}/stats`, { signal: AbortSignal.timeout(2000) });
     return res.ok;
   } catch {
     return false;
@@ -189,7 +198,7 @@ export async function pingBridge(): Promise<boolean> {
 
 /** Flush the Unbound cache via the bridge (POST /cache/flush). */
 export async function flushCache(): Promise<{ ok: boolean; message: string }> {
-  const res = await fetch(`${baseUrl()}/cache/flush`, {
+  const res = await authFetch(`${baseUrl()}/cache/flush`, {
     method: "POST",
     signal: AbortSignal.timeout(5000),
   });
@@ -205,7 +214,7 @@ export interface PingServerResult {
 
 /** Fetch real upstream DNS latency results from the bridge (GET /ping). */
 export async function fetchPingResults(): Promise<PingServerResult[]> {
-  const res = await fetch(`${baseUrl()}/ping`, { signal: AbortSignal.timeout(8000) });
+  const res = await authFetch(`${baseUrl()}/ping`, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`Bridge /ping returned ${res.status}`);
   return await res.json();
 }
@@ -223,10 +232,11 @@ export interface DnsQueryResult {
 
 /** Run a real DNS query through the bridge (GET /query?domain=&type=). */
 export async function fetchDnsQuery(domain: string, type = "A"): Promise<DnsQueryResult> {
-  const res = await fetch(
+  const res = await authFetch(
     `${baseUrl()}/query?domain=${encodeURIComponent(domain)}&type=${encodeURIComponent(type)}`,
     { signal: AbortSignal.timeout(8000) }
   );
   if (!res.ok) throw new Error(`Bridge /query returned ${res.status}`);
   return await res.json();
 }
+
