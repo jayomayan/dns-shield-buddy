@@ -4,7 +4,7 @@ import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBridgeUrl, getBridgeHeaders, setDbConfig, getBridgeUrl } from "@/hooks/use-bridge-url";
 import { saveOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
-import { setLocalAdminEnabled as persistLocalAdminEnabled } from "@/hooks/use-local-admin";
+import { setLocalAdminEnabled as persistLocalAdminEnabled, hashPassword, setAdminPasswordHash, getAdminPasswordHash } from "@/hooks/use-local-admin";
 import { User } from "@supabase/supabase-js";
 import { fetchBridgeSettings, saveBridgeSettings, type AppSettings } from "@/lib/unbound-bridge";
 
@@ -105,6 +105,41 @@ export default function SettingsPage({ user }: { user: User | null }) {
       return v === null ? true : v === "true";
     } catch { return true; }
   });
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [confirmAdminPassword, setConfirmAdminPassword] = useState("");
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [hasCustomPassword, setHasCustomPassword] = useState(() => {
+    const DEFAULT_HASH = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918";
+    return getAdminPasswordHash() !== DEFAULT_HASH;
+  });
+
+  const changeAdminPassword = async () => {
+    if (!newAdminPassword) return;
+    if (newAdminPassword !== confirmAdminPassword) {
+      toast({ title: "Passwords don't match", description: "New password and confirmation must be identical.", variant: "destructive" });
+      return;
+    }
+    if (newAdminPassword.length < 8) {
+      toast({ title: "Password too short", description: "Password must be at least 8 characters.", variant: "destructive" });
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      const hash = await hashPassword(newAdminPassword);
+      setAdminPasswordHash(hash);
+      setHasCustomPassword(true);
+      setNewAdminPassword("");
+      setConfirmAdminPassword("");
+      setShowChangePassword(false);
+      toast({ title: "Password updated", description: "Local admin password has been changed. Use it on next login." });
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
 
   // Log + notification state
   const [logRetention, setLogRetention] = useState("30");
@@ -771,11 +806,15 @@ export default function SettingsPage({ user }: { user: User | null }) {
             <span className={`px-2 py-0.5 rounded text-[10px] border ml-2 ${localAdminEnabled ? "bg-warning/10 text-warning border-warning/20" : "bg-muted text-muted-foreground border-border"}`}>
               {localAdminEnabled ? "Enabled" : "Disabled"}
             </span>
+            {hasCustomPassword && (
+              <span className="px-2 py-0.5 rounded text-[10px] bg-success/10 text-success border border-success/20">Custom password set</span>
+            )}
           </div>
         </div>
         <p className="text-xs text-muted-foreground mb-5">
-          Hardcoded fallback login (<code className="font-mono bg-muted px-1 rounded text-[11px]">admin / admin</code>) used when Okta SSO is not active.
-          Disable this once Okta is verified working to enforce SSO-only access.
+          Fallback login (username: <code className="font-mono bg-muted px-1 rounded text-[11px]">admin</code>) used when Okta SSO is not active.
+          Default password is <code className="font-mono bg-muted px-1 rounded text-[11px]">admin</code> — change it below.
+          Disable once Okta is verified working to enforce SSO-only access.
         </p>
 
         <div className="space-y-3">
@@ -786,7 +825,11 @@ export default function SettingsPage({ user }: { user: User | null }) {
                 <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
                 <div>
                   <p className="text-xs font-medium text-warning">Local admin is active</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Anyone with the default credentials can access the platform. Disable after Okta is confirmed working.</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {hasCustomPassword
+                      ? "Custom password is set. Disable after Okta is confirmed working."
+                      : "Using default password (admin). Set a custom password below for better security."}
+                  </p>
                 </div>
               </div>
               <button
@@ -810,7 +853,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
                 onClick={() => {
                   setLocalAdminEnabled(true);
                   persistLocalAdminEnabled(true);
-                  toast({ title: "Local admin re-enabled", description: "Fallback admin/admin login is active again." });
+                  toast({ title: "Local admin re-enabled", description: "Fallback admin login is active again." });
                 }}
                 className="shrink-0 px-3 py-1.5 text-[11px] font-medium text-muted-foreground border border-border rounded-lg hover:bg-muted transition-colors"
               >
@@ -819,12 +862,93 @@ export default function SettingsPage({ user }: { user: User | null }) {
             </div>
           )}
 
+          {/* Change Password */}
+          <div className="border border-border rounded-lg overflow-hidden">
+            <button
+              onClick={() => setShowChangePassword((v) => !v)}
+              className="flex items-center justify-between w-full px-4 py-3 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <Key className="h-3.5 w-3.5" />
+                {hasCustomPassword ? "Change Admin Password" : "Set Admin Password"}
+              </span>
+              <span className="text-[10px] text-muted-foreground">{showChangePassword ? "▲" : "▼"}</span>
+            </button>
+
+            <AnimatePresence>
+              {showChangePassword && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="px-4 pb-4 pt-2 border-t border-border space-y-3">
+                    <p className="text-[11px] text-muted-foreground">
+                      Password is hashed with SHA-256 and stored locally in this browser. Minimum 8 characters.
+                    </p>
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1.5">New Password</label>
+                      <div className="relative">
+                        <input
+                          type={showNewPw ? "text" : "password"}
+                          value={newAdminPassword}
+                          onChange={(e) => setNewAdminPassword(e.target.value)}
+                          placeholder="Min. 8 characters"
+                          className={inputClass + " pr-9"}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPw((v) => !v)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showNewPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1.5">Confirm New Password</label>
+                      <div className="relative">
+                        <input
+                          type={showConfirmPw ? "text" : "password"}
+                          value={confirmAdminPassword}
+                          onChange={(e) => setConfirmAdminPassword(e.target.value)}
+                          placeholder="Repeat password"
+                          className={inputClass + " pr-9"}
+                          onKeyDown={(e) => { if (e.key === "Enter") changeAdminPassword(); }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPw((v) => !v)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showConfirmPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        onClick={changeAdminPassword}
+                        disabled={changingPassword || !newAdminPassword || !confirmAdminPassword}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                      >
+                        {changingPassword ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                        {changingPassword ? "Saving…" : "Update Password"}
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/40 border border-border text-[11px] text-muted-foreground">
             <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-            <span>Disabling requires a page reload to take effect for existing sessions. The setting is stored locally in this browser.</span>
+            <span>Password hash is stored in this browser's local storage. Disabling requires a page reload to take effect for existing sessions.</span>
           </div>
         </div>
       </motion.div>
+
 
       {/* API Tokens */}
 
