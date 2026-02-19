@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect } from "react";
-import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, HardDrive, Wifi } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, HardDrive, Wifi, LogIn } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { useBridgeUrl, getBridgeHeaders } from "@/hooks/use-bridge-url";
+import { useBridgeUrl, getBridgeHeaders, setDbConfig } from "@/hooks/use-bridge-url";
 import { User } from "@supabase/supabase-js";
 import { useUserSettings } from "@/hooks/use-user-settings";
 
@@ -115,12 +115,27 @@ export default function SettingsPage({ user }: { user: User | null }) {
       setMaxLogSize(settings.log_max_size);
       setNotifyBlocked(settings.notify_blocked);
       setNotifyService(settings.notify_service);
-      setDbType(settings.db_type || "local");
-      setDbHost(settings.db_host || "");
-      setDbPort(settings.db_port || "5432");
-      setDbName(settings.db_name || "");
-      setDbUser(settings.db_user || "");
-      setDbPassword(settings.db_password || "");
+      const loadedDbType = settings.db_type || "local";
+      const loadedDbHost = settings.db_host || "";
+      const loadedDbPort = settings.db_port || "5432";
+      const loadedDbName = settings.db_name || "";
+      const loadedDbUser = settings.db_user || "";
+      const loadedDbPassword = settings.db_password || "";
+      setDbType(loadedDbType);
+      setDbHost(loadedDbHost);
+      setDbPort(loadedDbPort);
+      setDbName(loadedDbName);
+      setDbUser(loadedDbUser);
+      setDbPassword(loadedDbPassword);
+      // Sync db config to localStorage so bridge calls use the right database immediately
+      setDbConfig({
+        db_type: loadedDbType,
+        db_host: loadedDbHost || null,
+        db_port: loadedDbPort || null,
+        db_name: loadedDbName || null,
+        db_user: loadedDbUser || null,
+        db_password: loadedDbPassword || null,
+      });
       if (settings.bridge_url) { setBridgeUrlState(settings.bridge_url); setBridgeInput(settings.bridge_url); }
       if (settings.bridge_api_key) { setBridgeApiKeyState(settings.bridge_api_key); setApiKeyInput(settings.bridge_api_key); }
       if (settings.api_tokens) {
@@ -330,6 +345,18 @@ export default function SettingsPage({ user }: { user: User | null }) {
 
   return (
     <div className="space-y-6 max-w-3xl">
+      {/* ── Not signed in warning ─────────────────────────────────────── */}
+      {!user && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-warning/10 border border-warning/30 text-warning">
+          <LogIn className="h-4 w-4 mt-0.5 shrink-0" />
+          <div className="text-xs leading-relaxed">
+            <span className="font-semibold block mb-0.5">Not signed in — settings won't be saved to the cloud.</span>
+            Bridge URL and API key are stored locally in this browser only. All other settings (database, Okta, logs, notifications) require you to{" "}
+            <a href="/settings" className="underline font-medium" onClick={(e) => { e.preventDefault(); window.location.hash = ""; }}>sign in</a>{" "}
+            so they persist across sessions and devices. Use the account icon in the top right to sign in.
+          </div>
+        </div>
+      )}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
         <div className="flex items-center gap-2 mb-1">
           <Server className="h-4 w-4 text-primary" />
@@ -737,15 +764,19 @@ export default function SettingsPage({ user }: { user: User | null }) {
           </div>
           <button
             onClick={async () => {
-              const ok = await saveSettings({
+              const cfg = {
                 db_type: dbType,
                 db_host: dbType === "remote" ? dbHost || null : null,
                 db_port: dbType === "remote" ? dbPort || null : null,
                 db_name: dbType === "remote" ? dbName || null : null,
                 db_user: dbType === "remote" ? dbUser || null : null,
                 db_password: dbType === "remote" ? dbPassword || null : null,
-              });
-              if (ok) toast({ title: "Database config saved", description: "Database configuration synced to cloud." });
+              };
+              // Always sync to localStorage so bridge calls use this immediately
+              setDbConfig(cfg);
+              const ok = await saveSettings(cfg);
+              if (ok) toast({ title: "Database config saved", description: "Database configuration synced to cloud and applied to bridge." });
+              else toast({ title: "Saved locally", description: "DB config applied to this session. Sign in to sync to cloud.", variant: "default" });
             }}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
           >

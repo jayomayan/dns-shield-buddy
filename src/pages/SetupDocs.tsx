@@ -668,13 +668,63 @@ var server = http.createServer(function(req, res) {
   }
 
   var url = new URL(req.url, 'http://localhost:' + PORT);
+  // ── DB config from request headers (set by UI based on Settings → Database) ──
+  var dbType     = req.headers['x-db-type'] || 'local';
+  var dbHost     = req.headers['x-db-host'] || null;
+  var dbPort     = parseInt(req.headers['x-db-port'] || '5432', 10);
+  var dbName     = req.headers['x-db-name'] || null;
+  var dbUser     = req.headers['x-db-user'] || null;
+  var dbPassword = req.headers['x-db-password'] || null;
+  // Helper: get a pg client using the request-supplied credentials
+  function getRemoteDbClient() {
+    var path = require('path');
+    var { Client } = require(path.join(__dirname, 'node_modules', 'pg'));
+    return new Client({
+      host: dbHost, port: dbPort, database: dbName || 'dnsguard',
+      user: dbUser, password: dbPassword, connectionTimeoutMillis: 7000,
+    });
+  }
+
   Promise.resolve().then(function() {
     if (req.method === 'GET' && url.pathname === '/stats')
       return getStats().then(function(d) { json(res, d); });
     if (req.method === 'GET' && url.pathname === '/info')
       return json(res, getInfo());
-    if (req.method === 'GET' && url.pathname === '/logs')
-      return json(res, readLogs(parseInt(url.searchParams.get('limit') || '50')));
+    if (req.method === 'GET' && url.pathname === '/logs') {
+      var limit = parseInt(url.searchParams.get('limit') || '50');
+      if (dbType === 'remote' && dbHost) {
+        // Query remote PostgreSQL for logs
+        var pgClient = getRemoteDbClient();
+        return pgClient.connect().then(function() {
+          return pgClient.query(
+            'SELECT id::text, timestamp, client_ip as "clientIp", domain, type, status, response_time as "responseTime" FROM query_log ORDER BY timestamp DESC LIMIT $1',
+            [limit]
+          );
+        }).then(function(result) {
+          pgClient.end();
+          return json(res, result.rows);
+        }).catch(function(err) {
+          pgClient.end();
+          return json(res, { error: err.message }, 502);
+        });
+      }
+      if (dbType === 'local') {
+        // Query local SQLite for logs
+        try {
+          var path2 = require('path');
+          var Database2 = require(path2.join(__dirname, 'node_modules', 'better-sqlite3'));
+          var DB_PATH2 = process.env.DB_PATH || '/var/lib/dnsguard/dnsguard.db';
+          var db2 = new Database2(DB_PATH2, { readonly: true });
+          var rows = db2.prepare('SELECT id, timestamp, client_ip as clientIp, domain, type, status, response_time as responseTime FROM query_log ORDER BY timestamp DESC LIMIT ?').all(limit);
+          db2.close();
+          return json(res, rows);
+        } catch(e) {
+          // SQLite not available — fall back to unbound log file
+          return json(res, readLogs(limit));
+        }
+      }
+      return json(res, readLogs(limit));
+    }
     if (req.method === 'GET' && url.pathname === '/logs/summary')
       return json(res, getLogsSummary());
     if (req.method === 'GET' && url.pathname === '/query')
