@@ -967,18 +967,24 @@ const BRIDGE_INSTALL = `# Create directory and copy script
 sudo mkdir -p /opt/unbound-bridge
 sudo cp unbound-bridge.js /opt/unbound-bridge/
 
-# Install Node.js dependencies
+# Install Node.js (if not already installed)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Initialise npm and install dependencies
 cd /opt/unbound-bridge
 sudo npm init -y
-# Core dependency (always required)
-sudo npm install --save
 
-# Optional: install DB drivers for /db/ping and /settings support (v1.3+)
-# For remote PostgreSQL:
-sudo npm install pg
-# For local SQLite:
+# REQUIRED: SQLite driver for /settings and /db/ping support
+# All settings are persisted to: /var/lib/dnsguard/dnsguard.db
 sudo npm install better-sqlite3
-# Note: without DB drivers, settings fall back to a JSON file at SETTINGS_FILE path
+
+# OPTIONAL: PostgreSQL driver (only if using Remote Database mode)
+sudo npm install pg
+
+# Create the data directory for the SQLite database
+sudo mkdir -p /var/lib/dnsguard
+sudo chown root:root /var/lib/dnsguard
 
 # Install systemd service
 sudo cp unbound-bridge.service /etc/systemd/system/
@@ -989,15 +995,23 @@ sudo systemctl start unbound-bridge
 # Verify it's running
 sudo systemctl status unbound-bridge
 
-# Test with auth (replace with your actual API key from Settings):
+# Test bridge is up
 curl -H "Authorization: Bearer change-me-use-a-long-random-string" \\
      http://localhost:8080/stats | head -5
 
-# Test settings persistence:
+# Test GET /settings (should return {} on first run)
+curl -s -H "Authorization: Bearer change-me-use-a-long-random-string" \\
+     http://localhost:8080/settings | python3 -m json.tool
+
+# Test POST /settings (saves to /var/lib/dnsguard/dnsguard.db)
 curl -s -X POST http://localhost:8080/settings \\
      -H "Authorization: Bearer change-me-use-a-long-random-string" \\
      -H "Content-Type: application/json" \\
-     -d '{"bridge_url":"http://localhost:8080"}' | python3 -m json.tool`;
+     -d '{"bridge_url":"http://localhost:8080","log_retention":"30"}' | python3 -m json.tool
+
+# Verify it was persisted
+curl -s -H "Authorization: Bearer change-me-use-a-long-random-string" \\
+     http://localhost:8080/settings | python3 -m json.tool`;
 
 const BRIDGE_NGINX = `# Add inside your server {} block in nginx.conf
 # This proxies /api/* to the bridge and passes the Authorization header.
