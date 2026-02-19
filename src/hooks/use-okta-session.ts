@@ -130,24 +130,36 @@ export async function handleOktaCallback(
   const domain      = config.domain.replace(/\/$/, "");
   const redirectUri = `${window.location.origin}/auth/callback`;
 
+  // Build token body — always include code_verifier for PKCE
   const tokenBody: Record<string, string> = {
     grant_type:    "authorization_code",
-    client_id:     config.clientId,
     code,
     redirect_uri:  redirectUri,
     code_verifier: codeVerifier,
   };
-  // Confidential (Web) Okta apps require client_secret in the token exchange.
-  // SPA / public clients using PKCE should leave this empty.
+
+  // Confidential clients (Client secret + PKCE): authenticate via HTTP Basic Auth header.
+  // This is the RFC 6749 §2.3.1 standard and required by Okta for confidential clients.
+  // Public SPA clients (PKCE only): send client_id in body, no secret.
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+
   if (config.clientSecret) {
-    tokenBody.client_secret = config.clientSecret;
+    // Confidential client: Basic Auth header carries clientId + clientSecret
+    const credentials = btoa(`${config.clientId}:${config.clientSecret}`);
+    headers["Authorization"] = `Basic ${credentials}`;
+  } else {
+    // Public SPA client: client_id goes in the body
+    tokenBody.client_id = config.clientId;
   }
 
   const tokenRes = await fetch(`${domain}/oauth2/v1/token`, {
     method:  "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers,
     body: new URLSearchParams(tokenBody),
   });
+
 
   if (!tokenRes.ok) {
     const err = await tokenRes.json().catch(() => ({})) as Record<string, string>;
