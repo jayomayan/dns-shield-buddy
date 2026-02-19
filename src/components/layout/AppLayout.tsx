@@ -183,25 +183,43 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
             {/* User info — show Okta user or Supabase user */}
             {(isOktaUser || user) && (
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <div className="relative w-8 h-8">
+                <div className="flex items-center gap-2.5">
+                  {/* Avatar */}
+                  <div className="relative shrink-0">
                     <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
                       {displayInitial}
                     </div>
                     {isOktaUser && (
-                      <span className="absolute -bottom-0.5 -right-0.5 text-[8px] bg-primary text-primary-foreground rounded-full px-1 leading-tight font-bold">
+                      <span className="absolute -bottom-1 -right-1 text-[7px] bg-primary text-primary-foreground rounded-full px-[3px] py-[1px] leading-none font-bold tracking-tight border border-background">
                         SSO
                       </span>
                     )}
                   </div>
-                  <span className="hidden md:inline text-xs truncate max-w-[140px]">{displayName}</span>
+
+                  {/* Name + email stack */}
+                  <div className="hidden md:flex flex-col leading-tight max-w-[160px]">
+                    {oktaSession?.name && (
+                      <span className="text-xs font-semibold text-foreground truncate">
+                        {oktaSession.name}
+                      </span>
+                    )}
+                    <span className="text-[11px] text-muted-foreground truncate">
+                      {oktaSession?.email || user?.email}
+                    </span>
+                    {isOktaUser && (
+                      <span className="text-[9px] font-mono text-primary/70 -mt-0.5">Okta SSO</span>
+                    )}
+                  </div>
                 </div>
+
+                {/* Sign out */}
                 <button
                   onClick={handleSignOut}
-                  className="p-2 text-muted-foreground hover:text-destructive transition-colors"
                   title="Sign out"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20 transition-all"
                 >
-                  <LogOut className="h-4 w-4" />
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span className="hidden md:inline">Sign out</span>
                 </button>
               </div>
             )}
