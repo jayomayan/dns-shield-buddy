@@ -147,10 +147,12 @@ export async function handleOktaCallback(
   };
 
   if (config.clientSecret) {
-    // Confidential client: Basic Auth + PKCE (both required simultaneously by Okta)
-    headers["Authorization"] = `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`;
+    // Confidential client: send client credentials in POST body alongside PKCE
+    // Okta does NOT accept Basic Auth + PKCE together for browser flows
+    tokenBody.client_id     = config.clientId;
+    tokenBody.client_secret = config.clientSecret;
   } else {
-    // Public SPA client: client_id in body
+    // Public SPA client: client_id in body only
     tokenBody.client_id = config.clientId;
   }
 
