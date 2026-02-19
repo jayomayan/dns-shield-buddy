@@ -95,21 +95,25 @@ export async function handleOktaCallback(
     throw new Error("State mismatch — possible CSRF attack. Please try again.");
   }
 
-  const domain      = config.domain.replace(/\/$/, "");
-  const redirectUri = `${window.location.origin}/auth/callback`;
+  const redirectUri  = `${window.location.origin}/auth/callback`;
+  const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL as string;
+  const supabaseKey  = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
-  const body = new URLSearchParams({
-    grant_type:    "authorization_code",
-    code,
-    redirect_uri:  redirectUri,
-    client_id:     config.clientId,
-    ...(config.clientSecret ? { client_secret: config.clientSecret } : {}),
-  });
-
-  const res = await fetch(`${domain}/oauth2/v1/token`, {
+  // Token exchange is done server-side to avoid Okta's browser PKCE enforcement
+  const res = await fetch(`${supabaseUrl}/functions/v1/okta-token`, {
     method:  "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
+    headers: {
+      "Content-Type": "application/json",
+      "apikey":        supabaseKey,
+      "Authorization": `Bearer ${supabaseKey}`,
+    },
+    body: JSON.stringify({
+      code,
+      redirectUri,
+      domain:       config.domain,
+      clientId:     config.clientId,
+      clientSecret: config.clientSecret || "",
+    }),
   });
 
   if (!res.ok) {
