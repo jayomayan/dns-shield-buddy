@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useUserSettings } from "@/hooks/use-user-settings";
 import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, HardDrive, Wifi, LogIn, ExternalLink } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -69,6 +70,7 @@ function generateToken(): string {
 }
 
 export default function SettingsPage({ user }: { user: User | null }) {
+  const { saveSettings: saveToDb, settings: dbSettings } = useUserSettings(user);
   const { url: bridgeUrl, setUrl: setBridgeUrlState, apiKey: bridgeApiKey, setApiKey: setBridgeApiKeyState } = useBridgeUrl();
   const [bridgeInput, setBridgeInput] = useState(bridgeUrl);
   const [apiKeyInput, setApiKeyInput] = useState(bridgeApiKey);
@@ -218,6 +220,24 @@ export default function SettingsPage({ user }: { user: User | null }) {
       setSettingsLoading(false);
     }
   }, [setBridgeUrlState, setBridgeApiKeyState]);
+
+  // Load Okta settings from DB when they arrive
+  useEffect(() => {
+    if (dbSettings.okta_domain) setOktaDomain(dbSettings.okta_domain);
+    if (dbSettings.okta_client_id) setOktaClientId(dbSettings.okta_client_id);
+    if (dbSettings.okta_client_secret) setOktaSecret(dbSettings.okta_client_secret);
+    if (dbSettings.okta_enabled !== undefined) {
+      setOktaEnabled(dbSettings.okta_enabled);
+      if (dbSettings.okta_domain && dbSettings.okta_client_id) {
+        saveOktaConfig({
+          domain:       dbSettings.okta_domain,
+          clientId:     dbSettings.okta_client_id,
+          clientSecret: dbSettings.okta_client_secret || undefined,
+          enabled:      dbSettings.okta_enabled,
+        });
+      }
+    }
+  }, [dbSettings]);
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
 
@@ -639,15 +659,21 @@ export default function SettingsPage({ user }: { user: User | null }) {
                 toast({ title: "Missing fields", description: "Fill in Okta Domain and Client ID before saving.", variant: "destructive" });
                 return;
               }
+              const cfg = { domain: oktaDomain.trim(), clientId: oktaClientId.trim(), clientSecret: oktaSecret.trim() || undefined, enabled: true };
               setOktaEnabled(true);
-              saveOktaConfig({ domain: oktaDomain.trim(), clientId: oktaClientId.trim(), clientSecret: oktaSecret.trim() || undefined, enabled: true });
-              const ok = await saveSettings({
+              saveOktaConfig(cfg);
+              const oktaUpdate = {
                 okta_domain: oktaDomain.trim(),
                 okta_client_id: oktaClientId.trim(),
-                okta_client_secret: oktaSecret.trim(),
+                okta_client_secret: oktaSecret.trim() || null,
                 okta_enabled: true,
-              });
-              if (ok) toast({ title: "Okta SSO enabled", description: "SSO is now active. Users must sign in with Okta to access the platform." });
+              };
+              // Save to both bridge (local) and Lovable Cloud DB
+              await Promise.all([
+                saveSettings(oktaUpdate),
+                saveToDb(oktaUpdate),
+              ]);
+              toast({ title: "Okta SSO saved", description: "Configuration saved to database. SSO is now active." });
             }}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
           >
@@ -780,8 +806,11 @@ export default function SettingsPage({ user }: { user: User | null }) {
                 onClick={async () => {
                   setOktaEnabled(false);
                   saveOktaConfig({ domain: oktaDomain, clientId: oktaClientId, clientSecret: oktaSecret || undefined, enabled: false });
-                  await saveSettings({ okta_enabled: false });
-                  toast({ title: "Okta disabled", description: "SSO has been disabled. Users can now sign in with email/password." });
+                  await Promise.all([
+                    saveSettings({ okta_enabled: false }),
+                    saveToDb({ okta_enabled: false }),
+                  ]);
+                  toast({ title: "Okta disabled", description: "SSO has been disabled." });
                 }}
                 className="text-[11px] text-muted-foreground hover:text-destructive transition-colors ml-4 shrink-0"
               >
