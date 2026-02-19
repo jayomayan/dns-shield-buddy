@@ -20,16 +20,15 @@ function getErrorGuidance(error: string): { text: string; steps?: string[] } | n
 
   if (e.includes("proof key for code exchange") || e.includes("pkce") || e.includes("code_challenge")) {
     return {
-      text: "Okta requires the app to be configured as a Single-Page Application with PKCE.",
+      text: "Okta is configured with 'Client secret + Require PKCE as additional verification'. The token exchange now uses HTTP Basic Auth (clientId:clientSecret) + code_verifier — the correct method for this setup.",
       steps: [
-        "In Okta Admin → Applications → your app → General tab",
-        "Under 'Client Credentials', set 'Client authentication' to None (PKCE)",
-        "Or change the app type to 'Single-Page Application'",
-        "Leave Client Secret blank here — PKCE apps don't use one",
-        "Save in Okta, then click 'Save & Retry Login' below",
+        "Enter your Client Secret in the field below (required for confidential clients)",
+        "Click 'Save & Retry Login' — Basic Auth + PKCE will be used automatically",
+        "Your Okta settings look correct: Client Authentication = 'Client secret', PKCE = 'Require PKCE as additional verification'",
       ],
     };
   }
+
   if (e.includes("client authentication failed") || e.includes("invalid_client")) {
     return {
       text: "Client credentials are invalid — either the secret is wrong or the app type is mismatched.",
