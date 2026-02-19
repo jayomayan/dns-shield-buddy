@@ -138,7 +138,12 @@ export default function SettingsPage({ user }: { user: User | null }) {
       if (data.okta_client_secret !== undefined) setOktaSecret(data.okta_client_secret || "");
       if (data.okta_enabled !== undefined) {
         setOktaEnabled(data.okta_enabled);
-        saveOktaConfig({ domain: data.okta_domain || "", clientId: data.okta_client_id || "", enabled: data.okta_enabled });
+        saveOktaConfig({
+          domain:       data.okta_domain || "",
+          clientId:     data.okta_client_id || "",
+          clientSecret: data.okta_client_secret || undefined,
+          enabled:      data.okta_enabled,
+        });
       }
       if (data.log_retention) setLogRetention(data.log_retention);
       if (data.log_rotation) setLogRotation(data.log_rotation);
@@ -393,10 +398,10 @@ export default function SettingsPage({ user }: { user: User | null }) {
       toast({ title: "Missing fields", description: "Enter Okta Domain and Client ID before testing login.", variant: "destructive" });
       return;
     }
-    // Temporarily persist config so startOktaLogin can read it
-    saveOktaConfig({ domain, clientId, enabled: false });
+    // Temporarily persist config (including secret) so startOktaLogin can read it
+    saveOktaConfig({ domain, clientId, clientSecret: oktaSecret.trim() || undefined, enabled: false });
     try {
-      await startOktaLogin({ domain, clientId, enabled: false });
+      await startOktaLogin({ domain, clientId, clientSecret: oktaSecret.trim() || undefined, enabled: false });
     } catch (e: unknown) {
       toast({ title: "Login test failed", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
     }
@@ -586,13 +591,12 @@ export default function SettingsPage({ user }: { user: User | null }) {
           </div>
           <button
             onClick={async () => {
-              if (!oktaDomain.trim() || !oktaClientId.trim() || !oktaSecret.trim()) {
-                toast({ title: "Missing fields", description: "Fill in all three Okta fields before saving.", variant: "destructive" });
+              if (!oktaDomain.trim() || !oktaClientId.trim()) {
+                toast({ title: "Missing fields", description: "Fill in Okta Domain and Client ID before saving.", variant: "destructive" });
                 return;
               }
               setOktaEnabled(true);
-              // Persist to localStorage immediately so OktaGate activates on next visit
-              saveOktaConfig({ domain: oktaDomain.trim(), clientId: oktaClientId.trim(), enabled: true });
+              saveOktaConfig({ domain: oktaDomain.trim(), clientId: oktaClientId.trim(), clientSecret: oktaSecret.trim() || undefined, enabled: true });
               const ok = await saveSettings({
                 okta_domain: oktaDomain.trim(),
                 okta_client_id: oktaClientId.trim(),
@@ -616,11 +620,27 @@ export default function SettingsPage({ user }: { user: User | null }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1.5">Client ID</label>
-              <input value={oktaClientId} onChange={(e) => setOktaClientId(e.target.value)} placeholder="0oa1b2c3d4..." className={inputClass} />
+              <input value={oktaClientId} onChange={(e) => setOktaClientId(e.target.value)} placeholder="0oa1b2c3d4EXAMPLE" className={inputClass} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1.5">Client Secret</label>
-              <input type="password" value={oktaSecret} onChange={(e) => setOktaSecret(e.target.value)} placeholder="••••••••" className={inputClass} />
+              <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+                Client Secret
+                <span className="ml-2 text-[10px] font-normal text-muted-foreground">(Web / confidential apps only)</span>
+              </label>
+              <input type="password" value={oktaSecret} onChange={(e) => setOktaSecret(e.target.value)} placeholder="Leave blank for SPA / PKCE public clients" className={inputClass} />
+            </div>
+          </div>
+
+          {/* Client type hint */}
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/50 border border-border text-[11px] text-muted-foreground">
+            <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary/60" />
+            <div>
+              <span className="font-medium text-foreground">Which client type are you using?</span>
+              <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                <li><span className="font-medium">SPA (Single-Page App)</span> — leave Client Secret blank. Set "Client authentication" to <code className="bg-muted px-1 rounded">None (PKCE)</code> in Okta.</li>
+                <li><span className="font-medium">Web App (confidential)</span> — paste the Client Secret. Set "Client authentication" to <code className="bg-muted px-1 rounded">Client secret</code> in Okta.</li>
+              </ul>
+              <p className="mt-1">The error <em>"Client authentication failed"</em> usually means a Web App secret is required — paste it above.</p>
             </div>
           </div>
           {/* Test buttons + results */}
@@ -715,7 +735,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
               <button
                 onClick={async () => {
                   setOktaEnabled(false);
-                  saveOktaConfig({ domain: oktaDomain, clientId: oktaClientId, enabled: false });
+                  saveOktaConfig({ domain: oktaDomain, clientId: oktaClientId, clientSecret: oktaSecret || undefined, enabled: false });
                   await saveSettings({ okta_enabled: false });
                   toast({ title: "Okta disabled", description: "SSO has been disabled. Users can now sign in with email/password." });
                 }}
