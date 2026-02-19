@@ -122,9 +122,10 @@ export async function handleOktaCallback(
   if (!pkceRaw) throw new Error("No PKCE data found — please try signing in again.");
   const { codeVerifier, state: savedState, expiresAt } = JSON.parse(pkceRaw) as { codeVerifier: string; state: string; expiresAt: number };
   localStorage.removeItem(OKTA_PKCE_KEY);
+  if (!codeVerifier) throw new Error("PKCE code_verifier is missing — please try signing in again.");
   if (expiresAt && Date.now() > expiresAt) throw new Error("Login session expired — please try signing in again.");
-
   if (state !== savedState) throw new Error("State mismatch — possible CSRF attack. Please try again.");
+
 
   const domain      = config.domain.replace(/\/$/, "");
   const redirectUri = `${window.location.origin}/auth/callback`;
