@@ -578,6 +578,67 @@ function applyRules(rules) {
   });
 }
 
+// ─── Logs Summary (for dashboard hourly chart + top blocked) ─────────────────
+// Reads last 24h of logs and returns per-hour counts + top blocked domains.
+function getLogsSummary() {
+  try {
+    var allLogs = USE_JOURNALD ? readLogsFromJournald(10000) : (function() {
+      var content = fs.readFileSync(LOG_FILE, 'utf8');
+      var lines = content.trim().split('\\n');
+      var entries = [];
+      lines.forEach(function(line) { var e = parseLogLine(line); if (e) entries.push(e); });
+      return entries;
+    })();
+
+    var now = Date.now();
+    var cutoff = now - 24 * 60 * 60 * 1000;
+
+    // Build hourly buckets for last 24h
+    var hours = {};
+    for (var i = 0; i < 24; i++) {
+      var d = new Date(now - (23 - i) * 3600 * 1000);
+      var key = d.getUTCHours().toString().padStart(2,'0') + ':00';
+      hours[key] = { hour: key, allowed: 0, blocked: 0 };
+    }
+
+    // Tally blocked domains
+    var blockedMap = {};
+    var totalAllowed = 0, totalBlocked = 0;
+
+    allLogs.forEach(function(e) {
+      var ts = new Date(e.timestamp).getTime();
+      if (ts < cutoff) return;
+      var h = new Date(ts);
+      var key = h.getUTCHours().toString().padStart(2,'0') + ':00';
+      if (hours[key]) {
+        if (e.status === 'blocked') {
+          hours[key].blocked++;
+          totalBlocked++;
+          blockedMap[e.domain] = (blockedMap[e.domain] || 0) + 1;
+        } else {
+          hours[key].allowed++;
+          totalAllowed++;
+        }
+      }
+    });
+
+    // Top blocked domains sorted by count
+    var topBlocked = Object.keys(blockedMap)
+      .map(function(d) { return { domain: d, count: blockedMap[d] }; })
+      .sort(function(a, b) { return b.count - a.count; })
+      .slice(0, 10);
+
+    return {
+      hourly: Object.values(hours),
+      topBlocked: topBlocked,
+      totalAllowed: totalAllowed,
+      totalBlocked: totalBlocked,
+    };
+  } catch(e) {
+    return { hourly: [], topBlocked: [], totalAllowed: 0, totalBlocked: 0, error: e.message };
+  }
+}
+
 // ─── HTTP Server ──────────────────────────────────────────────────────────────
 var server = http.createServer(function(req, res) {
   if (req.method === 'OPTIONS') { cors(res); res.writeHead(204); res.end(); return; }
@@ -589,6 +650,8 @@ var server = http.createServer(function(req, res) {
       return json(res, getInfo());
     if (req.method === 'GET' && url.pathname === '/logs')
       return json(res, readLogs(parseInt(url.searchParams.get('limit') || '50')));
+    if (req.method === 'GET' && url.pathname === '/logs/summary')
+      return json(res, getLogsSummary());
     if (req.method === 'GET' && url.pathname === '/query')
       return dnsQuery(url.searchParams.get('domain') || 'google.com', url.searchParams.get('type') || 'A').then(function(d) { json(res, d); });
     if (req.method === 'GET' && url.pathname === '/ping')

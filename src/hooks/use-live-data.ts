@@ -5,6 +5,7 @@ import {
   fetchUnboundInfo,
   fetchUnboundLogs,
   fetchPingResults,
+  fetchLogsSummary,
   type UnboundLiveStats,
 } from "@/lib/unbound-bridge";
 
@@ -52,22 +53,35 @@ export function useLiveDashboard(intervalMs = 3000) {
 
     const poll = async () => {
       try {
-        const live = await fetchUnboundStats();
+        // Fetch stats and log summary in parallel
+        const [live, summary] = await Promise.all([
+          fetchUnboundStats(),
+          fetchLogsSummary().catch(() => null),
+        ]);
         if (!active) return;
 
+        // Use log-derived counts if unbound-control returns 0 (e.g. fresh restart)
+        const totalFromLogs = summary ? summary.totalAllowed + summary.totalBlocked : 0;
+        const totalQueries = live.totalQueries > 0 ? live.totalQueries : totalFromLogs;
+        const blockedQueries = live.blockedQueries > 0 ? live.blockedQueries : (summary?.totalBlocked ?? 0);
+        const allowedQueries = Math.max(0, totalQueries - blockedQueries);
+
         setStats({
-          totalQueries: live.totalQueries,
-          allowedQueries: live.allowedQueries,
-          blockedQueries: live.blockedQueries,
+          totalQueries,
+          allowedQueries,
+          blockedQueries,
           cachedQueries: live.cachedQueries,
           avgResponseTime: live.avgResponseTime,
           uptime: 99.99,
         });
 
-        if (prevStatsRef.current) {
+        // Use real hourly data from logs summary if available
+        if (summary && summary.hourly.length > 0) {
+          setHourly(summary.hourly);
+        } else if (prevStatsRef.current) {
           const prev = prevStatsRef.current;
-          const deltaAllowed = Math.max(0, live.allowedQueries - prev.allowedQueries);
-          const deltaBlocked = Math.max(0, live.blockedQueries - prev.blockedQueries);
+          const deltaAllowed = Math.max(0, allowedQueries - prev.allowedQueries);
+          const deltaBlocked = Math.max(0, blockedQueries - prev.blockedQueries);
           setHourly((h) => {
             const updated = [...h];
             const idx = updated.length - 1;
@@ -79,7 +93,19 @@ export function useLiveDashboard(intervalMs = 3000) {
             return updated;
           });
         }
-        prevStatsRef.current = live;
+
+        // Use real top blocked domains from logs
+        if (summary && summary.topBlocked.length > 0) {
+          setBlocked(
+            summary.topBlocked.map((d) => ({
+              domain: d.domain,
+              count: d.count,
+              category: "Blocked",
+            }))
+          );
+        }
+
+        prevStatsRef.current = { ...live, allowedQueries, blockedQueries, totalQueries } as UnboundLiveStats;
         setLastUpdate(new Date());
         setDataSource("live");
       } catch {
