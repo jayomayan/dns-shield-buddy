@@ -225,10 +225,10 @@ dig @<server-ip> google.com`,
 ];
 
 const BRIDGE_SCRIPT = `#!/usr/bin/env node
-// unbound-bridge.js — DNSGuard API Bridge v1.3
+// unbound-bridge.js — DNSGuard API Bridge v1.4
 // Place at: /opt/unbound-bridge/unbound-bridge.js
 // Run as root: sudo node unbound-bridge.js
-// v1.3 — adds GET /settings and POST /settings for DB-backed settings persistence
+// v1.4 — /logs always reads from unbound log file first (log file is the primary source for local mode)
 
 const http = require('http');
 const { exec, execSync } = require('child_process');
@@ -269,17 +269,24 @@ function json(res, data, status) {
 }
 
 // ─── Log parser ───────────────────────────────────────────────────────────────
-// Parses Unbound log format (unix-timestamp bracket style):
-// QUERY:   [1771467389] unbound[58080:2] info: 127.0.0.1 google.com. A IN
-// BLOCKED: [1771467409] unbound[58080:1] info: facebook.com. always_refuse 127.0.0.1@59952 facebook.com. A IN
-const LOG_RE_QUERY   = /^\\[(\\d+)\\]\\s+unbound\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL)\\s+IN/;
-const LOG_RE_BLOCKED = /^\\[(\\d+)\\]\\s+unbound\\[\\d+:\\d+\\]\\s+info:\\s+\\S+\\.?\\s+always_refuse\\s+([\\d.:a-fA-F]+)@\\d+\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL)\\s+IN/;
+// Parses multiple Unbound log formats:
+// Format 1 (unix-ts bracket): [1771467389] unbound[58080:2] info: 127.0.0.1 google.com. A IN
+// Format 2 (iso date):        2024-01-15T13:54:37 unbound[58080:2] info: 127.0.0.1 google.com. A IN
+// Format 3 (syslog):          Jan 15 13:54:37 hostname unbound[58080]: [58080:2] info: 127.0.0.1 google.com. A IN
+// BLOCKED:  [1771467409] unbound[58080:1] info: facebook.com. always_refuse 127.0.0.1@59952 facebook.com. A IN
+// Blocked: always_refuse line (check before allowed to avoid false positives)
+const LOG_RE_BLOCKED = /^\\[(\\d+)\\]\\s+unbound\\[\\d+:\\d+\\]\\s+info:\\s+\\S+\\.?\\s+always_refuse\\s+([\\d.:a-fA-F]+)@\\d+\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL|HTTPS|SVCB|CAA|NAPTR|SOA|ANY)\\s+IN/;
+// Normal query with unix timestamp bracket
+const LOG_RE_QUERY   = /^\\[(\\d+)\\]\\s+unbound\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL|HTTPS|SVCB|CAA|NAPTR|SOA|ANY)\\s+IN/;
+// Normal query with ISO timestamp (when log-time-ascii: yes is set in unbound.conf)
+const LOG_RE_ISO     = /^([\\d\\-T:]+Z?)\\s+unbound\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL|HTTPS|SVCB|CAA|NAPTR|SOA|ANY)\\s+IN/;
 // Legacy syslog format fallback: Feb 18 13:54:37 hostname unbound[pid]: [pid:tid] info: ip domain. TYPE IN
-const LOG_RE_SYSLOG  = /^(\\w{3}\\s+\\d+\\s+[\\d:]+)\\s+\\S+\\s+unbound\\[\\d+\\]:\\s+\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL)\\s+IN/;
+const LOG_RE_SYSLOG  = /^(\\w{3}\\s+\\d+\\s+[\\d:]+)\\s+\\S+\\s+unbound\\[\\d+\\]:\\s+\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL|HTTPS|SVCB|CAA|NAPTR|SOA|ANY)\\s+IN/;
 
 let logIndex = 0;
 function parseLogLine(line) {
   // 1. Check for blocked (always_refuse) — most specific first
+  // Groups: m[1]=unix_ts, m[2]=clientIp, m[3]=domain, m[4]=type
   let m = line.match(LOG_RE_BLOCKED);
   if (m) {
     const ts = new Date(parseInt(m[1]) * 1000);
@@ -293,7 +300,8 @@ function parseLogLine(line) {
       responseTime: 0,
     };
   }
-  // 2. Normal query line with unix timestamp
+  // 2. Normal query line with unix timestamp bracket
+  // Groups: m[1]=unix_ts, m[2]=clientIp, m[3]=domain, m[4]=type
   m = line.match(LOG_RE_QUERY);
   if (m) {
     const ts = new Date(parseInt(m[1]) * 1000);
@@ -307,7 +315,24 @@ function parseLogLine(line) {
       responseTime: 0,
     };
   }
-  // 3. Legacy syslog format fallback
+  // 3. ISO timestamp format (log-time-ascii: yes in unbound.conf)
+  // Groups: m[1]=iso_ts, m[2]=clientIp, m[3]=domain, m[4]=type
+  m = line.match(LOG_RE_ISO);
+  if (m) {
+    const ts = new Date(m[1]);
+    if (isNaN(ts.getTime())) return null;
+    return {
+      id: 'log-' + ts.getTime() + '-' + (logIndex++),
+      timestamp: ts.toISOString(),
+      clientIp: m[2],
+      domain: m[3].replace(/\\.$/, ''),
+      type: m[4],
+      status: 'allowed',
+      responseTime: 0,
+    };
+  }
+  // 4. Legacy syslog format fallback
+  // Groups: m[1]=syslog_ts, m[2]=clientIp, m[3]=domain, m[4]=type
   m = line.match(LOG_RE_SYSLOG);
   if (m) {
     const ts = new Date(m[1] + ' ' + new Date().getFullYear());
@@ -327,8 +352,9 @@ function parseLogLine(line) {
 
 function readLogsFromFile(limit) {
   try {
+    if (!fs.existsSync(LOG_FILE)) return [];
     const content = fs.readFileSync(LOG_FILE, 'utf8');
-    const lines = content.trim().split('\\n').slice(-2000);
+    const lines = content.trim().split('\\n').slice(-5000); // read last 5000 lines
     const entries = [];
     lines.forEach(function(line) {
       const e = parseLogLine(line);
@@ -340,7 +366,7 @@ function readLogsFromFile(limit) {
 
 function readLogsFromJournald(limit) {
   try {
-    const out = execSync('journalctl -u unbound -n 500 --no-pager --output=short', { timeout: 5000 }).toString();
+    const out = execSync('journalctl -u unbound -n 1000 --no-pager --output=short', { timeout: 5000 }).toString();
     const entries = [];
     out.trim().split('\\n').forEach(function(line) {
       const e = parseLogLine(line);
@@ -352,6 +378,22 @@ function readLogsFromJournald(limit) {
 
 function readLogs(limit) {
   return USE_JOURNALD ? readLogsFromJournald(limit || 50) : readLogsFromFile(limit || 50);
+}
+
+// Debug: return raw log lines and parse results for troubleshooting
+function getLogDebug() {
+  try {
+    var exists = fs.existsSync(LOG_FILE);
+    if (!exists) return { error: 'Log file not found: ' + LOG_FILE, logFile: LOG_FILE, useJournald: USE_JOURNALD };
+    var stat = fs.statSync(LOG_FILE);
+    var content = fs.readFileSync(LOG_FILE, 'utf8');
+    var lines = content.trim().split('\\n');
+    var lastLines = lines.slice(-20);
+    var parsed = lastLines.map(function(line) { return { line: line, parsed: parseLogLine(line) }; });
+    var totalParsed = 0;
+    lines.slice(-200).forEach(function(l) { if (parseLogLine(l)) totalParsed++; });
+    return { logFile: LOG_FILE, exists: exists, sizeBytes: stat.size, totalLines: lines.length, parsedInLast200: totalParsed, useJournald: USE_JOURNALD, last20Lines: parsed };
+  } catch(e) { return { error: e.message, logFile: LOG_FILE }; }
 }
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
@@ -828,7 +870,11 @@ var server = http.createServer(function(req, res) {
         });
       }
       if (dbType === 'local') {
-        // Query local SQLite for logs
+        // Primary source: parse the Unbound log file directly.
+        // SQLite query_log is only used if rows exist (populated by an external ingestion job).
+        var fileLogs = readLogs(limit);
+        if (fileLogs.length > 0) return json(res, fileLogs);
+        // Fallback: try SQLite query_log table (populated externally)
         try {
           var path2 = require('path');
           var Database2 = require(path2.join(__dirname, 'node_modules', 'better-sqlite3'));
@@ -836,14 +882,14 @@ var server = http.createServer(function(req, res) {
           var db2 = new Database2(DB_PATH2, { readonly: true });
           var rows = db2.prepare('SELECT id, timestamp, client_ip as clientIp, domain, type, status, response_time as responseTime FROM query_log ORDER BY timestamp DESC LIMIT ?').all(limit);
           db2.close();
-          return json(res, rows);
-        } catch(e) {
-          // SQLite not available — fall back to unbound log file
-          return json(res, readLogs(limit));
-        }
+          if (rows.length > 0) return json(res, rows);
+        } catch(e) { /* SQLite not available or table missing — already returned file logs above */ }
+        return json(res, []);
       }
       return json(res, readLogs(limit));
     }
+    if (req.method === 'GET' && url.pathname === '/logs/debug')
+      return json(res, getLogDebug());
     if (req.method === 'GET' && url.pathname === '/logs/summary')
       return json(res, getLogsSummary());
     if (req.method === 'GET' && url.pathname === '/query')
