@@ -1,8 +1,11 @@
-import { useState, useRef } from "react";
-import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, LogIn } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBridgeUrl, getBridgeHeaders } from "@/hooks/use-bridge-url";
+import { User } from "@supabase/supabase-js";
+import { useUserSettings } from "@/hooks/use-user-settings";
+import { Link } from "react-router-dom";
 
 interface EndpointResult {
   path: string;
@@ -64,7 +67,8 @@ function generateToken(): string {
   return prefix + result;
 }
 
-export default function SettingsPage() {
+export default function SettingsPage({ user }: { user: User | null }) {
+  const { settings, loading: settingsLoading, saving, saveSettings } = useUserSettings(user);
   const { url: bridgeUrl, setUrl: setBridgeUrlState, apiKey: bridgeApiKey, setApiKey: setBridgeApiKeyState } = useBridgeUrl();
   const [bridgeInput, setBridgeInput] = useState(bridgeUrl);
   const [apiKeyInput, setApiKeyInput] = useState(bridgeApiKey);
@@ -74,35 +78,59 @@ export default function SettingsPage() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
-  // ── Config keys that belong to this app ──────────────────────────────────
-  const CONFIG_KEYS = [
-    "unbound_bridge_url",
-    "unbound_bridge_api_key",
-    "unbound_dns_rules",
-    "unbound_setup_progress",
-    "okta_domain",
-    "okta_client_id",
-    "okta_client_secret",
-    "okta_enabled",
-    "api_tokens",
-    "log_retention",
-    "log_rotation",
-    "log_max_size",
-    "notify_blocked",
-    "notify_service",
-  ];
+  // Okta state
+  const [oktaDomain, setOktaDomain] = useState("");
+  const [oktaClientId, setOktaClientId] = useState("");
+  const [oktaSecret, setOktaSecret] = useState("");
+  const [oktaEnabled, setOktaEnabled] = useState(false);
+  const [oktaTesting, setOktaTesting] = useState(false);
+  const [oktaTestResult, setOktaTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  // Log + notification state
+  const [logRetention, setLogRetention] = useState("30");
+  const [logRotation, setLogRotation] = useState("daily");
+  const [maxLogSize, setMaxLogSize] = useState("500");
+  const [notifyBlocked, setNotifyBlocked] = useState(true);
+  const [notifyService, setNotifyService] = useState(true);
+
+  // Sync from DB once loaded
+  useEffect(() => {
+    if (!settingsLoading) {
+      setOktaDomain(settings.okta_domain || "");
+      setOktaClientId(settings.okta_client_id || "");
+      setOktaSecret(settings.okta_client_secret || "");
+      setOktaEnabled(settings.okta_enabled);
+      setLogRetention(settings.log_retention);
+      setLogRotation(settings.log_rotation);
+      setMaxLogSize(settings.log_max_size);
+      setNotifyBlocked(settings.notify_blocked);
+      setNotifyService(settings.notify_service);
+      if (settings.bridge_url) { setBridgeUrlState(settings.bridge_url); setBridgeInput(settings.bridge_url); }
+      if (settings.bridge_api_key) { setBridgeApiKeyState(settings.bridge_api_key); setApiKeyInput(settings.bridge_api_key); }
+      if (settings.api_tokens) {
+        try { setTokens(settings.api_tokens as unknown as ApiToken[]); } catch { /* ignore */ }
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsLoading]);
 
   const exportConfig = () => {
     const config: Record<string, unknown> = {
-      _version: 1,
+      _version: 2,
       _exportedAt: new Date().toISOString(),
+      bridge_url: bridgeInput,
+      bridge_api_key: apiKeyInput,
+      okta_domain: oktaDomain,
+      okta_client_id: oktaClientId,
+      okta_client_secret: oktaSecret,
+      okta_enabled: oktaEnabled,
+      api_tokens: tokens,
+      log_retention: logRetention,
+      log_rotation: logRotation,
+      log_max_size: maxLogSize,
+      notify_blocked: notifyBlocked,
+      notify_service: notifyService,
     };
-    for (const key of CONFIG_KEYS) {
-      const val = localStorage.getItem(key);
-      if (val !== null) {
-        try { config[key] = JSON.parse(val); } catch { config[key] = val; }
-      }
-    }
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -116,26 +144,39 @@ export default function SettingsPage() {
   const importConfig = (file: File) => {
     setImportError(null);
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const parsed = JSON.parse(e.target?.result as string);
         if (typeof parsed !== "object" || parsed === null) throw new Error("Invalid format");
-        let count = 0;
-        for (const key of CONFIG_KEYS) {
-          if (key in parsed) {
-            const val = parsed[key];
-            localStorage.setItem(key, typeof val === "string" ? val : JSON.stringify(val));
-            count++;
-          }
-        }
-        // Refresh bridge URL inputs from storage
-        const newUrl = localStorage.getItem("unbound_bridge_url") || "";
-        const newKey = localStorage.getItem("unbound_bridge_api_key") || "";
-        setBridgeUrlState(newUrl);
-        setBridgeApiKeyState(newKey);
-        setBridgeInput(newUrl);
-        setApiKeyInput(newKey);
-        toast({ title: "Config imported", description: `${count} setting(s) restored successfully.` });
+        const newUrl = parsed.bridge_url || parsed.unbound_bridge_url || "";
+        const newKey = parsed.bridge_api_key || parsed.unbound_bridge_api_key || "";
+        if (newUrl) { setBridgeInput(newUrl); setBridgeUrlState(newUrl); }
+        if (newKey) { setApiKeyInput(newKey); setBridgeApiKeyState(newKey); }
+        if (parsed.okta_domain !== undefined) setOktaDomain(parsed.okta_domain);
+        if (parsed.okta_client_id !== undefined) setOktaClientId(parsed.okta_client_id);
+        if (parsed.okta_client_secret !== undefined) setOktaSecret(parsed.okta_client_secret);
+        if (parsed.okta_enabled !== undefined) setOktaEnabled(parsed.okta_enabled);
+        if (parsed.log_retention) setLogRetention(parsed.log_retention);
+        if (parsed.log_rotation) setLogRotation(parsed.log_rotation);
+        if (parsed.log_max_size) setMaxLogSize(parsed.log_max_size);
+        if (parsed.notify_blocked !== undefined) setNotifyBlocked(parsed.notify_blocked);
+        if (parsed.notify_service !== undefined) setNotifyService(parsed.notify_service);
+        if (parsed.api_tokens) setTokens(parsed.api_tokens);
+        await saveSettings({
+          bridge_url: newUrl || null,
+          bridge_api_key: newKey || null,
+          okta_domain: parsed.okta_domain || null,
+          okta_client_id: parsed.okta_client_id || null,
+          okta_client_secret: parsed.okta_client_secret || null,
+          okta_enabled: parsed.okta_enabled ?? false,
+          api_tokens: parsed.api_tokens ?? null,
+          log_retention: parsed.log_retention || "30",
+          log_rotation: parsed.log_rotation || "daily",
+          log_max_size: parsed.log_max_size || "500",
+          notify_blocked: parsed.notify_blocked ?? true,
+          notify_service: parsed.notify_service ?? true,
+        });
+        toast({ title: "Config imported", description: "Settings restored and synced to cloud." });
       } catch {
         setImportError("Invalid config file — make sure you're using a file exported from DNS Shield.");
       }
@@ -146,25 +187,19 @@ export default function SettingsPage() {
   const runEndpointTests = async () => {
     setIsTesting(true);
     const base = bridgeInput.replace(/\/$/, "");
-    // Set all to checking
     setEndpointResults(ENDPOINTS.map((ep) => ({ ...ep, status: "checking", latency: null, httpCode: null, error: null })));
-    // Fire all tests in parallel
     const results = await Promise.all(ENDPOINTS.map((ep) => testEndpoint(base, ep)));
     setEndpointResults(results);
     setIsTesting(false);
   };
 
-  const saveBridgeUrl = () => {
+  const saveBridgeUrl = async () => {
     setBridgeUrlState(bridgeInput);
     setBridgeApiKeyState(apiKeyInput);
+    const ok = await saveSettings({ bridge_url: bridgeInput || null, bridge_api_key: apiKeyInput || null });
+    if (ok) toast({ title: "Bridge settings saved", description: "Connection settings synced to cloud." });
+    else if (!user) toast({ title: "Not signed in", description: "Sign in to sync settings across browsers.", variant: "destructive" });
   };
-
-  const [oktaDomain, setOktaDomain] = useState(() => localStorage.getItem("okta_domain") || "");
-  const [oktaClientId, setOktaClientId] = useState(() => localStorage.getItem("okta_client_id") || "");
-  const [oktaSecret, setOktaSecret] = useState(() => localStorage.getItem("okta_client_secret") || "");
-  const [oktaEnabled, setOktaEnabled] = useState(() => localStorage.getItem("okta_enabled") === "true");
-  const [oktaTesting, setOktaTesting] = useState(false);
-  const [oktaTestResult, setOktaTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const testOktaIntegration = async () => {
     const domain = oktaDomain.trim();
@@ -193,38 +228,9 @@ export default function SettingsPage() {
       setOktaTesting(false);
     }
   };
-  const [logRetention, setLogRetention] = useState(() => localStorage.getItem("log_retention") || "30");
-  const [logRotation, setLogRotation] = useState(() => localStorage.getItem("log_rotation") || "daily");
-  const [maxLogSize, setMaxLogSize] = useState(() => localStorage.getItem("log_max_size") || "500");
-  const [notifyBlocked, setNotifyBlocked] = useState(() => localStorage.getItem("notify_blocked") !== "false");
-  const [notifyService, setNotifyService] = useState(() => localStorage.getItem("notify_service") !== "false");
 
-  // API Tokens — persisted to localStorage
-  const [tokens, setTokens] = useState<ApiToken[]>(() => {
-    try {
-      const stored = localStorage.getItem("api_tokens");
-      return stored ? JSON.parse(stored) : [
-        {
-          id: "tok-1",
-          name: "CI/CD Pipeline",
-          token: "dng_k8s2Lm9xPqR4vW7yA1bC3dE5fG6hJ0nT8uI2oS4wX",
-          createdAt: "2024-11-20",
-          lastUsed: "2025-02-15",
-          expiresAt: "2025-11-20",
-          scopes: ["dns:read", "rules:read", "rules:write", "logs:read"],
-        },
-        {
-          id: "tok-2",
-          name: "Monitoring Service",
-          token: "dng_mN3pQ5rS7tU9vW1xY3zA5bC7dE9fG1hJ3kL5mN7pQ",
-          createdAt: "2025-01-10",
-          lastUsed: "2025-02-16",
-          expiresAt: null,
-          scopes: ["dns:read", "monitoring:read", "logs:read"],
-        },
-      ];
-    } catch { return []; }
-  });
+  // API Tokens — stored in DB as JSONB
+  const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [showCreateToken, setShowCreateToken] = useState(false);
   const [newTokenName, setNewTokenName] = useState("");
   const [newTokenExpiry, setNewTokenExpiry] = useState("90");
@@ -239,12 +245,12 @@ export default function SettingsPage() {
     );
   };
 
-  const persistTokens = (updated: ApiToken[]) => {
-    localStorage.setItem("api_tokens", JSON.stringify(updated));
+  const persistTokens = async (updated: ApiToken[]) => {
     setTokens(updated);
+    await saveSettings({ api_tokens: updated as unknown as import("@/integrations/supabase/types").Json });
   };
 
-  const createToken = () => {
+  const createToken = async () => {
     if (!newTokenName.trim()) return;
     const token: ApiToken = {
       id: `tok-${Date.now()}`,
@@ -256,7 +262,7 @@ export default function SettingsPage() {
       scopes: [...newTokenScopes],
     };
     const updated = [token, ...tokens];
-    persistTokens(updated);
+    await persistTokens(updated);
     setJustCreatedToken(token.id);
     setRevealedTokens((prev) => new Set(prev).add(token.id));
     setNewTokenName("");
@@ -264,10 +270,12 @@ export default function SettingsPage() {
     setNewTokenExpiry("90");
     setShowCreateToken(false);
     setTimeout(() => setJustCreatedToken(null), 10000);
+    toast({ title: "Token created", description: "API token saved to cloud." });
   };
 
-  const revokeToken = (id: string) => {
-    persistTokens(tokens.filter((t) => t.id !== id));
+  const revokeToken = async (id: string) => {
+    await persistTokens(tokens.filter((t) => t.id !== id));
+    toast({ title: "Token revoked", description: "API token removed from cloud." });
   };
 
   const copyToken = (id: string, token: string) => {
@@ -288,7 +296,18 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {/* Bridge Connection */}
+      {/* Not signed in banner */}
+      {!user && (
+        <div className="flex items-center justify-between gap-3 p-4 rounded-lg bg-warning/5 border border-warning/20">
+          <div className="flex items-center gap-2">
+            <LogIn className="h-4 w-4 text-warning shrink-0" />
+            <p className="text-xs text-warning">You&apos;re not signed in — settings are saved locally only and won&apos;t sync across browsers.</p>
+          </div>
+          <Link to="/auth" className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors">
+            Sign In
+          </Link>
+        </div>
+      )}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
         <div className="flex items-center gap-2 mb-1">
           <Server className="h-4 w-4 text-primary" />
@@ -415,17 +434,19 @@ export default function SettingsPage() {
             )}
           </div>
           <button
-            onClick={() => {
+            onClick={async () => {
               if (!oktaDomain.trim() || !oktaClientId.trim() || !oktaSecret.trim()) {
                 toast({ title: "Missing fields", description: "Fill in all three Okta fields before saving.", variant: "destructive" });
                 return;
               }
-              localStorage.setItem("okta_domain", oktaDomain.trim());
-              localStorage.setItem("okta_client_id", oktaClientId.trim());
-              localStorage.setItem("okta_client_secret", oktaSecret.trim());
-              localStorage.setItem("okta_enabled", "true");
               setOktaEnabled(true);
-              toast({ title: "Okta config saved", description: "SSO configuration saved and enabled." });
+              const ok = await saveSettings({
+                okta_domain: oktaDomain.trim(),
+                okta_client_id: oktaClientId.trim(),
+                okta_client_secret: oktaSecret.trim(),
+                okta_enabled: true,
+              });
+              if (ok) toast({ title: "Okta config saved", description: "SSO configuration saved and synced to cloud." });
             }}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
           >
@@ -488,9 +509,9 @@ export default function SettingsPage() {
                 <p className="text-xs text-success">Okta SSO is active — enterprise authentication enforced for platform users.</p>
               </div>
               <button
-                onClick={() => {
-                  localStorage.setItem("okta_enabled", "false");
+                onClick={async () => {
                   setOktaEnabled(false);
+                  await saveSettings({ okta_enabled: false });
                   toast({ title: "Okta disabled", description: "SSO has been disabled." });
                 }}
                 className="text-[11px] text-muted-foreground hover:text-destructive transition-colors ml-4 shrink-0"
@@ -648,11 +669,9 @@ export default function SettingsPage() {
           </div>
           <div className="flex justify-end">
             <button
-              onClick={() => {
-                localStorage.setItem("log_retention", logRetention);
-                localStorage.setItem("log_rotation", logRotation);
-                localStorage.setItem("log_max_size", maxLogSize);
-                toast({ title: "Log settings saved", description: "Query logging configuration updated." });
+              onClick={async () => {
+                const ok = await saveSettings({ log_retention: logRetention, log_rotation: logRotation, log_max_size: maxLogSize });
+                if (ok) toast({ title: "Log settings saved", description: "Query logging configuration synced to cloud." });
               }}
               className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
             >
@@ -671,8 +690,8 @@ export default function SettingsPage() {
         <p className="text-xs text-muted-foreground mb-6">Alert preferences for DNS events.</p>
         <div className="space-y-3">
           {[
-            { label: "High blocked query volume alerts", key: "notify_blocked", checked: notifyBlocked, onChange: (v: boolean) => { setNotifyBlocked(v); localStorage.setItem("notify_blocked", String(v)); } },
-            { label: "Service status change alerts", key: "notify_service", checked: notifyService, onChange: (v: boolean) => { setNotifyService(v); localStorage.setItem("notify_service", String(v)); } },
+            { label: "High blocked query volume alerts", key: "notify_blocked", checked: notifyBlocked, onChange: async (v: boolean) => { setNotifyBlocked(v); await saveSettings({ notify_blocked: v }); } },
+            { label: "Service status change alerts", key: "notify_service", checked: notifyService, onChange: async (v: boolean) => { setNotifyService(v); await saveSettings({ notify_service: v }); } },
           ].map((item) => (
             <label key={item.key} className="flex items-center justify-between cursor-pointer group">
               <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">{item.label}</span>
