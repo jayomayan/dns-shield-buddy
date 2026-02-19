@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { toast } from "@/hooks/use-toast";
 import { useOktaContext } from "@/App";
+import { useLocalAdminContext } from "@/App";
 import { getOktaConfig } from "@/hooks/use-okta-session";
 
 const navItems = [
@@ -28,32 +29,30 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
   const location = useLocation();
   const { theme, setTheme } = useTheme();
   const { session: oktaSession, signOut: oktaSignOut } = useOktaContext();
+  const { session: localAdminSession, signOut: localAdminSignOut } = useLocalAdminContext();
   const oktaConfig = getOktaConfig();
 
   const handleSignOut = async () => {
-    // Sign out of Supabase
     await supabase.auth.signOut();
-    // Sign out of Okta if enabled
     if (oktaConfig?.enabled && oktaSession) {
       oktaSignOut();
-      // Redirect to Okta logout if possible
       try {
         const domain = oktaConfig.domain.replace(/\/$/, "");
         const idToken = oktaSession.idToken;
         const logoutUrl = `${domain}/oauth2/v1/logout?id_token_hint=${encodeURIComponent(idToken)}&post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
         window.location.href = logoutUrl;
         return;
-      } catch {
-        // fall through to toast
-      }
+      } catch { /* fall through */ }
     }
+    if (localAdminSession) { localAdminSignOut(); return; }
     toast({ title: "Signed out" });
   };
 
-  // Determine display user — prefer Okta session
-  const displayName = oktaSession?.name || oktaSession?.email || user?.email || null;
-  const displayInitial = (oktaSession?.name || oktaSession?.email || user?.email || "U").charAt(0).toUpperCase();
-  const isOktaUser = !!oktaSession;
+  // Determine display user — prefer Okta session, then local admin, then Supabase
+  const displayName    = oktaSession?.name || oktaSession?.email || (localAdminSession ? "Local Admin" : null) || user?.email || null;
+  const displayInitial = (oktaSession?.name || oktaSession?.email || (localAdminSession ? "A" : null) || user?.email || "U").charAt(0).toUpperCase();
+  const isOktaUser     = !!oktaSession;
+  const isLocalAdmin   = !!localAdminSession && !isOktaUser;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -180,13 +179,15 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
               <span className="text-xs font-mono text-success">ONLINE</span>
             </div>
 
-            {/* User info — show Okta user or Supabase user */}
-            {(isOktaUser || user) && (
+            {/* User info — Okta, Local Admin, or Supabase */}
+            {(isOktaUser || isLocalAdmin || user) && (
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2.5">
                   {/* Avatar */}
                   <div className="relative shrink-0">
-                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
+                      isLocalAdmin ? "bg-warning/20 text-warning" : "bg-primary/20 text-primary"
+                    }`}>
                       {displayInitial}
                     </div>
                     {isOktaUser && (
@@ -194,21 +195,26 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
                         SSO
                       </span>
                     )}
-                  </div>
-
-                  {/* Name + email stack */}
-                  <div className="hidden md:flex flex-col leading-tight max-w-[160px]">
-                    {oktaSession?.name && (
-                      <span className="text-xs font-semibold text-foreground truncate">
-                        {oktaSession.name}
+                    {isLocalAdmin && (
+                      <span className="absolute -bottom-1 -right-1 text-[7px] bg-warning text-warning-foreground rounded-full px-[3px] py-[1px] leading-none font-bold tracking-tight border border-background">
+                        LOCAL
                       </span>
                     )}
-                    <span className="text-[11px] text-muted-foreground truncate">
-                      {oktaSession?.email || user?.email}
-                    </span>
-                    {isOktaUser && (
-                      <span className="text-[9px] font-mono text-primary/70 -mt-0.5">Okta SSO</span>
+                  </div>
+
+                  {/* Name + label */}
+                  <div className="hidden md:flex flex-col leading-tight max-w-[160px]">
+                    {oktaSession?.name && (
+                      <span className="text-xs font-semibold text-foreground truncate">{oktaSession.name}</span>
                     )}
+                    {isLocalAdmin && (
+                      <span className="text-xs font-semibold text-foreground">Local Admin</span>
+                    )}
+                    <span className="text-[11px] text-muted-foreground truncate">
+                      {oktaSession?.email || (!isLocalAdmin && user?.email)}
+                    </span>
+                    {isOktaUser && <span className="text-[9px] font-mono text-primary/70 -mt-0.5">Okta SSO</span>}
+                    {isLocalAdmin && <span className="text-[9px] font-mono text-warning/70 -mt-0.5">Fallback login</span>}
                   </div>
                 </div>
 
