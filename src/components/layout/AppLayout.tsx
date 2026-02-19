@@ -149,7 +149,7 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
               <div className="w-2 h-2 rounded-full bg-success animate-pulse-glow" />
               <span className="text-xs font-mono text-success">ONLINE</span>
             </div>
-            {user ? (
+            {user && (
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
@@ -165,13 +165,6 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
                   <LogOut className="h-4 w-4" />
                 </button>
               </div>
-            ) : (
-              <Link
-                to="/auth"
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90 transition-colors"
-              >
-                Sign In
-              </Link>
             )}
           </div>
         </header>

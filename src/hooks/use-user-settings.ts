@@ -16,6 +16,12 @@ export interface UserSettings {
   log_max_size: string;
   notify_blocked: boolean;
   notify_service: boolean;
+  db_type: string;
+  db_host: string | null;
+  db_port: string | null;
+  db_name: string | null;
+  db_user: string | null;
+  db_password: string | null;
 }
 
 export const SETTINGS_DEFAULTS: UserSettings = {
@@ -31,6 +37,12 @@ export const SETTINGS_DEFAULTS: UserSettings = {
   log_max_size: "500",
   notify_blocked: true,
   notify_service: true,
+  db_type: "local",
+  db_host: null,
+  db_port: null,
+  db_name: null,
+  db_user: null,
+  db_password: null,
 };
 
 export function useUserSettings(user: User | null) {
@@ -67,6 +79,12 @@ export function useUserSettings(user: User | null) {
         log_max_size: data.log_max_size,
         notify_blocked: data.notify_blocked,
         notify_service: data.notify_service,
+        db_type: (data as Record<string, unknown>).db_type as string ?? "local",
+        db_host: (data as Record<string, unknown>).db_host as string | null ?? null,
+        db_port: (data as Record<string, unknown>).db_port as string | null ?? null,
+        db_name: (data as Record<string, unknown>).db_name as string | null ?? null,
+        db_user: (data as Record<string, unknown>).db_user as string | null ?? null,
+        db_password: (data as Record<string, unknown>).db_password as string | null ?? null,
       });
     }
     setLoading(false);

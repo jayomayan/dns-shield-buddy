@@ -1,11 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, LogIn } from "lucide-react";
+import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, HardDrive, Wifi } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBridgeUrl, getBridgeHeaders } from "@/hooks/use-bridge-url";
 import { User } from "@supabase/supabase-js";
 import { useUserSettings } from "@/hooks/use-user-settings";
-import { Link } from "react-router-dom";
 
 interface EndpointResult {
   path: string;
@@ -78,6 +77,17 @@ export default function SettingsPage({ user }: { user: User | null }) {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
+  // Database config state
+  const [dbType, setDbType] = useState("local");
+  const [dbHost, setDbHost] = useState("");
+  const [dbPort, setDbPort] = useState("5432");
+  const [dbName, setDbName] = useState("");
+  const [dbUser, setDbUser] = useState("");
+  const [dbPassword, setDbPassword] = useState("");
+  const [showDbPassword, setShowDbPassword] = useState(false);
+  const [dbTesting, setDbTesting] = useState(false);
+  const [dbTestResult, setDbTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   // Okta state
   const [oktaDomain, setOktaDomain] = useState("");
   const [oktaClientId, setOktaClientId] = useState("");
@@ -105,6 +115,12 @@ export default function SettingsPage({ user }: { user: User | null }) {
       setMaxLogSize(settings.log_max_size);
       setNotifyBlocked(settings.notify_blocked);
       setNotifyService(settings.notify_service);
+      setDbType(settings.db_type || "local");
+      setDbHost(settings.db_host || "");
+      setDbPort(settings.db_port || "5432");
+      setDbName(settings.db_name || "");
+      setDbUser(settings.db_user || "");
+      setDbPassword(settings.db_password || "");
       if (settings.bridge_url) { setBridgeUrlState(settings.bridge_url); setBridgeInput(settings.bridge_url); }
       if (settings.bridge_api_key) { setBridgeApiKeyState(settings.bridge_api_key); setApiKeyInput(settings.bridge_api_key); }
       if (settings.api_tokens) {
@@ -296,18 +312,6 @@ export default function SettingsPage({ user }: { user: User | null }) {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {/* Not signed in banner */}
-      {!user && (
-        <div className="flex items-center justify-between gap-3 p-4 rounded-lg bg-warning/5 border border-warning/20">
-          <div className="flex items-center gap-2">
-            <LogIn className="h-4 w-4 text-warning shrink-0" />
-            <p className="text-xs text-warning">You&apos;re not signed in — settings are saved locally only and won&apos;t sync across browsers.</p>
-          </div>
-          <Link to="/auth" className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors">
-            Sign In
-          </Link>
-        </div>
-      )}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
         <div className="flex items-center gap-2 mb-1">
           <Server className="h-4 w-4 text-primary" />
@@ -701,6 +705,124 @@ export default function SettingsPage({ user }: { user: User | null }) {
             </label>
           ))}
         </div>
+      </motion.div>
+
+      {/* Database Configuration */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }} className="bg-card border border-border rounded-lg p-6">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold">Database Configuration</h3>
+            <span className={`px-2 py-0.5 rounded text-[10px] border ml-2 ${dbType === "remote" ? "bg-primary/10 text-primary border-primary/20" : "bg-muted text-muted-foreground border-border"}`}>
+              {dbType === "remote" ? "Remote" : "Local"}
+            </span>
+          </div>
+          <button
+            onClick={async () => {
+              const ok = await saveSettings({
+                db_type: dbType,
+                db_host: dbType === "remote" ? dbHost || null : null,
+                db_port: dbType === "remote" ? dbPort || null : null,
+                db_name: dbType === "remote" ? dbName || null : null,
+                db_user: dbType === "remote" ? dbUser || null : null,
+                db_password: dbType === "remote" ? dbPassword || null : null,
+              });
+              if (ok) toast({ title: "Database config saved", description: "Database configuration synced to cloud." });
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Save className="h-3.5 w-3.5" /> Save
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-5">Choose whether the application connects to a local embedded database or a remote PostgreSQL server.</p>
+
+        <div className="flex gap-3 mb-5">
+          <button
+            onClick={() => { setDbType("local"); setDbTestResult(null); }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-xs font-medium transition-colors ${dbType === "local" ? "bg-primary/10 text-primary border-primary/30" : "bg-muted text-muted-foreground border-border hover:text-foreground"}`}
+          >
+            <HardDrive className="h-3.5 w-3.5" /> Local Database
+          </button>
+          <button
+            onClick={() => { setDbType("remote"); setDbTestResult(null); }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-xs font-medium transition-colors ${dbType === "remote" ? "bg-primary/10 text-primary border-primary/30" : "bg-muted text-muted-foreground border-border hover:text-foreground"}`}
+          >
+            <Wifi className="h-3.5 w-3.5" /> Remote Database
+          </button>
+        </div>
+
+        <AnimatePresence>
+          {dbType === "local" && (
+            <motion.div key="local" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border">
+              <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
+              <p className="text-xs text-muted-foreground">Using the local embedded database. No additional configuration required. Data is stored on the local machine running DNSGuard.</p>
+            </motion.div>
+          )}
+          {dbType === "remote" && (
+            <motion.div key="remote" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">Host</label>
+                  <input value={dbHost} onChange={(e) => setDbHost(e.target.value)} placeholder="db.example.com or 192.168.1.10" className={inputClass} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">Port</label>
+                  <input value={dbPort} onChange={(e) => setDbPort(e.target.value)} placeholder="5432" className={inputClass} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1.5">Database Name</label>
+                <input value={dbName} onChange={(e) => setDbName(e.target.value)} placeholder="dnsguard" className={inputClass} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">Username</label>
+                  <input value={dbUser} onChange={(e) => setDbUser(e.target.value)} placeholder="postgres" className={inputClass} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">Password</label>
+                  <div className="relative">
+                    <input type={showDbPassword ? "text" : "password"} value={dbPassword} onChange={(e) => setDbPassword(e.target.value)} placeholder="••••••••" className={inputClass + " pr-8"} />
+                    <button onClick={() => setShowDbPassword((v) => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      {showDbPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    if (!dbHost.trim()) {
+                      toast({ title: "Missing host", description: "Enter a database host before testing.", variant: "destructive" });
+                      return;
+                    }
+                    setDbTesting(true);
+                    setDbTestResult(null);
+                    await new Promise((r) => setTimeout(r, 1200));
+                    setDbTestResult({ ok: false, message: "Direct DB connectivity tests run server-side. Save the config and verify via application logs." });
+                    setDbTesting(false);
+                  }}
+                  disabled={dbTesting}
+                  className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                >
+                  {dbTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  {dbTesting ? "Testing…" : "Test Connection"}
+                </button>
+              </div>
+              <AnimatePresence>
+                {dbTestResult && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                    className="flex items-start gap-2 p-3 rounded-lg border bg-warning/5 border-warning/20 text-xs text-warning"
+                  >
+                    <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>{dbTestResult.message}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
 
       {/* Import / Export Config */}

@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,7 +15,6 @@ import Monitoring from "@/pages/Monitoring";
 import UnboundConfig from "@/pages/UnboundConfig";
 import SetupDocs from "@/pages/SetupDocs";
 import SettingsPage from "@/pages/SettingsPage";
-import AuthPage from "@/pages/AuthPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -56,7 +55,6 @@ const App = () => (
           <AuthGate>
             {(user) => (
               <Routes>
-                <Route path="/auth" element={user ? <Navigate to="/" replace /> : <AuthPage />} />
                 <Route path="/" element={<AppLayout user={user}><Dashboard /></AppLayout>} />
                 <Route path="/dns-rules" element={<AppLayout user={user}><DnsRules /></AppLayout>} />
                 <Route path="/query-logs" element={<AppLayout user={user}><QueryLogs /></AppLayout>} />
