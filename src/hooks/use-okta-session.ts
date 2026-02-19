@@ -4,6 +4,7 @@
 const OKTA_CONFIG_KEY  = "okta_config";
 const OKTA_SESSION_KEY = "okta_session";
 const OKTA_PKCE_KEY    = "okta_pkce";
+const PKCE_TTL_MS      = 10 * 60 * 1000; // 10 minutes
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -43,11 +44,11 @@ export interface OktaSession {
 
 export function getOktaSession(): OktaSession | null {
   try {
-    const raw = sessionStorage.getItem(OKTA_SESSION_KEY);
+    const raw = localStorage.getItem(OKTA_SESSION_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as OktaSession;
     if (Date.now() > s.expiresAt) {
-      sessionStorage.removeItem(OKTA_SESSION_KEY);
+      localStorage.removeItem(OKTA_SESSION_KEY);
       return null;
     }
     return s;
@@ -55,11 +56,11 @@ export function getOktaSession(): OktaSession | null {
 }
 
 export function storeOktaSession(session: OktaSession): void {
-  try { sessionStorage.setItem(OKTA_SESSION_KEY, JSON.stringify(session)); } catch {}
+  try { localStorage.setItem(OKTA_SESSION_KEY, JSON.stringify(session)); } catch {}
 }
 
 export function clearOktaSession(): void {
-  try { sessionStorage.removeItem(OKTA_SESSION_KEY); } catch {}
+  try { localStorage.removeItem(OKTA_SESSION_KEY); } catch {}
 }
 
 // ─── PKCE helpers ─────────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ export async function startOktaLogin(config: OktaConfig): Promise<void> {
   window.crypto.getRandomValues(stateArr);
   const state          = base64urlEncode(stateArr.buffer);
 
-  sessionStorage.setItem(OKTA_PKCE_KEY, JSON.stringify({ codeVerifier, state }));
+  localStorage.setItem(OKTA_PKCE_KEY, JSON.stringify({ codeVerifier, state, expiresAt: Date.now() + PKCE_TTL_MS }));
 
   const domain      = config.domain.replace(/\/$/, "");
   const redirectUri = `${window.location.origin}/auth/callback`;
@@ -116,10 +117,11 @@ export async function handleOktaCallback(
   state:  string,
   config: OktaConfig,
 ): Promise<OktaSession> {
-  const pkceRaw = sessionStorage.getItem(OKTA_PKCE_KEY);
+  const pkceRaw = localStorage.getItem(OKTA_PKCE_KEY);
   if (!pkceRaw) throw new Error("No PKCE data found — please try signing in again.");
-  const { codeVerifier, state: savedState } = JSON.parse(pkceRaw) as { codeVerifier: string; state: string };
-  sessionStorage.removeItem(OKTA_PKCE_KEY);
+  const { codeVerifier, state: savedState, expiresAt } = JSON.parse(pkceRaw) as { codeVerifier: string; state: string; expiresAt: number };
+  localStorage.removeItem(OKTA_PKCE_KEY);
+  if (expiresAt && Date.now() > expiresAt) throw new Error("Login session expired — please try signing in again.");
 
   if (state !== savedState) throw new Error("State mismatch — possible CSRF attack. Please try again.");
 
