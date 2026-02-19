@@ -753,9 +753,61 @@ export default function SettingsPage({ user }: { user: User | null }) {
 
         <AnimatePresence>
           {dbType === "local" && (
-            <motion.div key="local" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border">
-              <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
-              <p className="text-xs text-muted-foreground">Using the local embedded database. No additional configuration required. Data is stored on the local machine running DNSGuard.</p>
+            <motion.div key="local" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border">
+                <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
+                <p className="text-xs text-muted-foreground flex-1">Using the local embedded SQLite database. No additional configuration required. Data is stored on the local machine running DNSGuard.</p>
+                <button
+                  onClick={async () => {
+                    const base = bridgeInput.replace(/\/$/, "");
+                    if (!base) {
+                      toast({ title: "Bridge URL required", description: "Set the Unbound Bridge URL first — the test runs through the bridge.", variant: "destructive" });
+                      return;
+                    }
+                    setDbTesting(true);
+                    setDbTestResult(null);
+                    const start = Date.now();
+                    try {
+                      const res = await fetch(`${base}/db/ping`, {
+                        method: "POST",
+                        headers: { ...getBridgeHeaders(), "Content-Type": "application/json" },
+                        body: JSON.stringify({ type: "local" }),
+                        signal: AbortSignal.timeout(8000),
+                      });
+                      const latency = Date.now() - start;
+                      if (res.ok) {
+                        setDbTestResult({ ok: true, message: `Local SQLite reachable via bridge in ${latency}ms.` });
+                      } else if (res.status === 404) {
+                        setDbTestResult({ ok: false, message: "Bridge endpoint /db/ping not found. Update your bridge script to v1.2+ to enable live DB testing." });
+                      } else {
+                        const body = await res.json().catch(() => ({}));
+                        setDbTestResult({ ok: false, message: body?.error ?? `Bridge returned HTTP ${res.status}.` });
+                      }
+                    } catch (e: unknown) {
+                      const isTimeout = e instanceof Error && e.name === "TimeoutError";
+                      setDbTestResult({ ok: false, message: isTimeout ? "Request timed out — bridge unreachable within 8s." : "Could not reach the bridge. Ensure the bridge URL is correct and the service is running." });
+                    } finally {
+                      setDbTesting(false);
+                    }
+                  }}
+                  disabled={dbTesting}
+                  className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 shrink-0"
+                >
+                  {dbTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  {dbTesting ? "Testing…" : "Test Database"}
+                </button>
+              </div>
+              <AnimatePresence>
+                {dbTestResult && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                    className={`flex items-start gap-2 p-3 rounded-lg border text-xs ${dbTestResult.ok ? "bg-success/5 border-success/20 text-success" : "bg-destructive/5 border-destructive/20 text-destructive"}`}
+                  >
+                    {dbTestResult.ok ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" /> : <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />}
+                    <span>{dbTestResult.message}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
           {dbType === "remote" && (
