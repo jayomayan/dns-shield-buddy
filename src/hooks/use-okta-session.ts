@@ -86,31 +86,39 @@ function generateCodeVerifier(): string {
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 export async function startOktaLogin(config: OktaConfig): Promise<void> {
-  // Always use PKCE — Okta requires it for all browser-based flows,
-  // even when a client_secret is also configured.
-  const codeVerifier  = generateCodeVerifier();
-  const codeChallenge = base64urlEncode(await sha256(codeVerifier));
-  const stateArr      = new Uint8Array(16);
+  const stateArr = new Uint8Array(16);
   window.crypto.getRandomValues(stateArr);
-  const state         = base64urlEncode(stateArr.buffer);
-
-  localStorage.setItem(OKTA_PKCE_KEY, JSON.stringify({ codeVerifier, state, expiresAt: Date.now() + PKCE_TTL_MS }));
+  const state = base64urlEncode(stateArr.buffer);
 
   const domain      = config.domain.replace(/\/$/, "");
   const redirectUri = `${window.location.origin}/auth/callback`;
 
-  const params = new URLSearchParams({
-    client_id:             config.clientId,
-    response_type:         "code",
-    scope:                 "openid profile email",
-    redirect_uri:          redirectUri,
-    state,
-    nonce:                 state,
-    code_challenge:        codeChallenge,
-    code_challenge_method: "S256",
-  });
+  // Confidential clients (client_secret present) with PKCE disabled in Okta:
+  // do NOT send code_challenge — Okta ignores it and issues a non-PKCE code,
+  // then rejects any code_verifier at token time.
+  // Public/SPA clients (no secret): always use PKCE.
+  const usesPkce = !config.clientSecret;
 
-  window.location.href = `${domain}/oauth2/v1/authorize?${params}`;
+  const paramsObj: Record<string, string> = {
+    client_id:     config.clientId,
+    response_type: "code",
+    scope:         "openid profile email",
+    redirect_uri:  redirectUri,
+    state,
+    nonce:         state,
+  };
+
+  let codeVerifier: string | null = null;
+  if (usesPkce) {
+    codeVerifier = generateCodeVerifier();
+    const codeChallenge = base64urlEncode(await sha256(codeVerifier));
+    paramsObj.code_challenge        = codeChallenge;
+    paramsObj.code_challenge_method = "S256";
+  }
+
+  localStorage.setItem(OKTA_PKCE_KEY, JSON.stringify({ codeVerifier, state, expiresAt: Date.now() + PKCE_TTL_MS }));
+
+  window.location.href = `${domain}/oauth2/v1/authorize?${new URLSearchParams(paramsObj)}`;
 }
 
 
@@ -123,23 +131,19 @@ export async function handleOktaCallback(
   config: OktaConfig,
 ): Promise<OktaSession> {
   const pkceRaw = localStorage.getItem(OKTA_PKCE_KEY);
-  console.log("[Okta] pkceRaw from localStorage:", pkceRaw);
   if (!pkceRaw) throw new Error("No session data found — please try signing in again.");
-  const { codeVerifier, state: savedState, expiresAt } = JSON.parse(pkceRaw) as { codeVerifier: string; state: string; expiresAt: number };
+  const { codeVerifier, state: savedState, expiresAt } = JSON.parse(pkceRaw) as { codeVerifier: string | null; state: string; expiresAt: number };
   localStorage.removeItem(OKTA_PKCE_KEY);
-  console.log("[Okta] codeVerifier present:", !!codeVerifier, "| state match:", state === savedState);
   if (expiresAt && Date.now() > expiresAt) throw new Error("Login session expired — please try signing in again.");
   if (state !== savedState) throw new Error("State mismatch — possible CSRF attack. Please try again.");
 
   const domain      = config.domain.replace(/\/$/, "");
   const redirectUri = `${window.location.origin}/auth/callback`;
 
-  // Always send code_verifier — Okta requires PKCE for all browser-based flows
   const tokenBody: Record<string, string> = {
-    grant_type:    "authorization_code",
+    grant_type:   "authorization_code",
     code,
-    redirect_uri:  redirectUri,
-    code_verifier: codeVerifier,
+    redirect_uri: redirectUri,
   };
 
   const headers: Record<string, string> = {
@@ -147,19 +151,14 @@ export async function handleOktaCallback(
   };
 
   if (config.clientSecret) {
-    // Confidential client: send client credentials in POST body alongside PKCE
-    // Okta does NOT accept Basic Auth + PKCE together for browser flows
+    // Confidential client (PKCE disabled in Okta): credentials in POST body, no code_verifier
     tokenBody.client_id     = config.clientId;
     tokenBody.client_secret = config.clientSecret;
   } else {
-    // Public SPA client: client_id in body only
+    // Public SPA client: PKCE flow — send client_id + code_verifier in body
     tokenBody.client_id = config.clientId;
+    if (codeVerifier) tokenBody.code_verifier = codeVerifier;
   }
-
-  console.log("[Okta] Token endpoint:", `${domain}/oauth2/v1/token`);
-  console.log("[Okta] Token body keys:", Object.keys(tokenBody));
-  console.log("[Okta] Using Basic Auth:", !!config.clientSecret);
-  console.log("[Okta] redirect_uri:", redirectUri);
 
   const tokenRes = await fetch(`${domain}/oauth2/v1/token`, {
     method:  "POST",
