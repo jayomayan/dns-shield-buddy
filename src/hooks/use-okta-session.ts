@@ -126,16 +126,17 @@ export async function handleOktaCallback(
   config: OktaConfig,
 ): Promise<OktaSession> {
   const pkceRaw = localStorage.getItem(OKTA_PKCE_KEY);
+  console.log("[Okta] pkceRaw from localStorage:", pkceRaw);
   if (!pkceRaw) throw new Error("No session data found — please try signing in again.");
   const { codeVerifier, state: savedState, expiresAt } = JSON.parse(pkceRaw) as { codeVerifier: string | null; state: string; expiresAt: number };
   localStorage.removeItem(OKTA_PKCE_KEY);
+  console.log("[Okta] codeVerifier present:", !!codeVerifier, "| state match:", state === savedState);
   if (expiresAt && Date.now() > expiresAt) throw new Error("Login session expired — please try signing in again.");
   if (state !== savedState) throw new Error("State mismatch — possible CSRF attack. Please try again.");
 
   const domain      = config.domain.replace(/\/$/, "");
   const redirectUri = `${window.location.origin}/auth/callback`;
 
-  // Build token body — code_verifier only included when PKCE was used
   const tokenBody: Record<string, string> = {
     grant_type:   "authorization_code",
     code,
@@ -151,12 +152,15 @@ export async function handleOktaCallback(
   };
 
   if (config.clientSecret) {
-    // Confidential client: authenticate via HTTP Basic Auth (RFC 6749 §2.3.1)
     headers["Authorization"] = `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`;
   } else {
-    // Public SPA client: client_id in body
     tokenBody.client_id = config.clientId;
   }
+
+  console.log("[Okta] Token endpoint:", `${domain}/oauth2/v1/token`);
+  console.log("[Okta] Token body keys:", Object.keys(tokenBody));
+  console.log("[Okta] Using Basic Auth:", !!config.clientSecret);
+  console.log("[Okta] redirect_uri:", redirectUri);
 
   const tokenRes = await fetch(`${domain}/oauth2/v1/token`, {
     method:  "POST",
@@ -164,12 +168,14 @@ export async function handleOktaCallback(
     body: new URLSearchParams(tokenBody),
   });
 
-
+  console.log("[Okta] Token response status:", tokenRes.status);
 
   if (!tokenRes.ok) {
     const err = await tokenRes.json().catch(() => ({})) as Record<string, string>;
+    console.error("[Okta] Token error response:", err);
     throw new Error(err.error_description || `Token exchange failed (HTTP ${tokenRes.status})`);
   }
+
 
   const tokens = await tokenRes.json() as {
     access_token: string;
