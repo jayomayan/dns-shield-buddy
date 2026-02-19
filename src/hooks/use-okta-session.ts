@@ -9,9 +9,10 @@ const PKCE_TTL_MS      = 10 * 60 * 1000; // 10 minutes
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 export interface OktaConfig {
-  domain:   string;  // e.g. https://dev-xxx.okta.com
-  clientId: string;
-  enabled:  boolean;
+  domain:        string;  // e.g. https://dev-xxx.okta.com
+  clientId:      string;
+  clientSecret?: string;  // optional — only for Web/confidential clients
+  enabled:       boolean;
 }
 
 export function getOktaConfig(): OktaConfig | null {
@@ -128,16 +129,23 @@ export async function handleOktaCallback(
   const domain      = config.domain.replace(/\/$/, "");
   const redirectUri = `${window.location.origin}/auth/callback`;
 
+  const tokenBody: Record<string, string> = {
+    grant_type:    "authorization_code",
+    client_id:     config.clientId,
+    code,
+    redirect_uri:  redirectUri,
+    code_verifier: codeVerifier,
+  };
+  // Confidential (Web) Okta apps require client_secret in the token exchange.
+  // SPA / public clients using PKCE should leave this empty.
+  if (config.clientSecret) {
+    tokenBody.client_secret = config.clientSecret;
+  }
+
   const tokenRes = await fetch(`${domain}/oauth2/v1/token`, {
     method:  "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type:    "authorization_code",
-      client_id:     config.clientId,
-      code,
-      redirect_uri:  redirectUri,
-      code_verifier: codeVerifier,
-    }),
+    body: new URLSearchParams(tokenBody),
   });
 
   if (!tokenRes.ok) {
