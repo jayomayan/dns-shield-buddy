@@ -138,6 +138,23 @@ export async function fetchUnboundLogs(limit = 50): Promise<BridgeLogEntry[]> {
   return await res.json();
 }
 
+export interface LogsSummary {
+  hourly: { hour: string; allowed: number; blocked: number }[];
+  topBlocked: { domain: string; count: number }[];
+  totalAllowed: number;
+  totalBlocked: number;
+}
+
+/**
+ * Fetch a 24h summary derived from log file (GET /logs/summary).
+ * Returns per-hour query counts and top blocked domains.
+ */
+export async function fetchLogsSummary(): Promise<LogsSummary> {
+  const res = await fetch(`${baseUrl()}/logs/summary`, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`Bridge /logs/summary returned ${res.status}`);
+  return await res.json();
+}
+
 
 export interface RulesPayload {
   blacklist: { domain: string; enabled: boolean; category: string }[];
