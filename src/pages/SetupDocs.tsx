@@ -253,30 +253,60 @@ function json(res, data, status) {
 }
 
 // ─── Log parser ───────────────────────────────────────────────────────────────
-// Parses the exact Unbound query log format:
-// Feb 18 13:54:37 hostname unbound[8222]: [8222:0] info: 127.0.0.1 google.com. A IN
-const LOG_RE = /^(\\w{3}\\s+\\d+\\s+[\\d:]+)\\s+\\S+\\s+unbound\\[\\d+\\]:\\s+\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+([\\S]+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL)\\s+IN/;
+// Parses Unbound log format (unix-timestamp bracket style):
+// QUERY:   [1771467389] unbound[58080:2] info: 127.0.0.1 google.com. A IN
+// BLOCKED: [1771467409] unbound[58080:1] info: facebook.com. always_refuse 127.0.0.1@59952 facebook.com. A IN
+const LOG_RE_QUERY   = /^\\[(\\d+)\\]\\s+unbound\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL)\\s+IN/;
+const LOG_RE_BLOCKED = /^\\[(\\d+)\\]\\s+unbound\\[\\d+:\\d+\\]\\s+info:\\s+\\S+\\.?\\s+always_refuse\\s+([\\d.:a-fA-F]+)@\\d+\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL)\\s+IN/;
+// Legacy syslog format fallback: Feb 18 13:54:37 hostname unbound[pid]: [pid:tid] info: ip domain. TYPE IN
+const LOG_RE_SYSLOG  = /^(\\w{3}\\s+\\d+\\s+[\\d:]+)\\s+\\S+\\s+unbound\\[\\d+\\]:\\s+\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL)\\s+IN/;
 
 let logIndex = 0;
 function parseLogLine(line) {
-  const m = line.match(LOG_RE);
-  if (!m) return null;
-  const dateStr = m[1];
-  const clientIp = m[2];
-  const domain = m[3].replace(/\\.$/, '');
-  const type = m[4];
-  const year = new Date().getFullYear();
-  const ts = new Date(dateStr + ' ' + year);
-  if (isNaN(ts.getTime())) return null;
-  return {
-    id: 'log-' + ts.getTime() + '-' + (logIndex++),
-    timestamp: ts.toISOString(),
-    clientIp,
-    domain,
-    type,
-    status: 'allowed',
-    responseTime: 0,
-  };
+  // 1. Check for blocked (always_refuse) — most specific first
+  let m = line.match(LOG_RE_BLOCKED);
+  if (m) {
+    const ts = new Date(parseInt(m[1]) * 1000);
+    return {
+      id: 'log-' + ts.getTime() + '-' + (logIndex++),
+      timestamp: ts.toISOString(),
+      clientIp: m[2],
+      domain: m[3].replace(/\\.$/, ''),
+      type: m[4],
+      status: 'blocked',
+      responseTime: 0,
+    };
+  }
+  // 2. Normal query line with unix timestamp
+  m = line.match(LOG_RE_QUERY);
+  if (m) {
+    const ts = new Date(parseInt(m[1]) * 1000);
+    return {
+      id: 'log-' + ts.getTime() + '-' + (logIndex++),
+      timestamp: ts.toISOString(),
+      clientIp: m[2],
+      domain: m[3].replace(/\\.$/, ''),
+      type: m[4],
+      status: 'allowed',
+      responseTime: 0,
+    };
+  }
+  // 3. Legacy syslog format fallback
+  m = line.match(LOG_RE_SYSLOG);
+  if (m) {
+    const ts = new Date(m[1] + ' ' + new Date().getFullYear());
+    if (isNaN(ts.getTime())) return null;
+    return {
+      id: 'log-' + ts.getTime() + '-' + (logIndex++),
+      timestamp: ts.toISOString(),
+      clientIp: m[2],
+      domain: m[3].replace(/\\.$/, ''),
+      type: m[4],
+      status: 'allowed',
+      responseTime: 0,
+    };
+  }
+  return null;
 }
 
 function readLogsFromFile(limit) {
@@ -1140,7 +1170,7 @@ export default function SetupDocs() {
                   ["clientIp", "The IP that sent the query (127.0.0.1 = the server itself)"],
                   ["domain", "Queried domain name (trailing dot stripped)"],
                   ["type", "DNS record type: A, AAAA, CNAME, MX, TXT, SRV, PTR, NS"],
-                  ["status", "Always 'allowed' in query logs — Unbound logs all queries it processes"],
+                  ["status", "'allowed' for normal queries, 'blocked' when Unbound logs always_refuse action"],
                 ].map(([k, v]) => (
                   <li key={k} className="flex items-start gap-2 text-xs text-muted-foreground">
                     <code className="px-1.5 py-0.5 bg-muted rounded font-mono text-[11px] text-foreground shrink-0">{k}</code>
