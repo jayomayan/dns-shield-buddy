@@ -225,9 +225,10 @@ dig @<server-ip> google.com`,
 ];
 
 const BRIDGE_SCRIPT = `#!/usr/bin/env node
-// unbound-bridge.js — DNSGuard API Bridge v2
+// unbound-bridge.js — DNSGuard API Bridge v1.2
 // Place at: /opt/unbound-bridge/unbound-bridge.js
 // Run as root: sudo node unbound-bridge.js
+// v1.2 — adds POST /db/ping for local SQLite & remote PostgreSQL connectivity tests
 
 const http = require('http');
 const { exec, execSync } = require('child_process');
@@ -695,6 +696,55 @@ var server = http.createServer(function(req, res) {
       });
       return;
     }
+    // ── /db/ping ─ v1.2+ ───────────────────────────────────────────────
+    if (req.method === 'POST' && url.pathname === '/db/ping') {
+      var body = '';
+      req.on('data', function(d) { body += d; });
+      req.on('end', function() {
+        try {
+          var cfg = JSON.parse(body || '{}');
+        } catch(e) {
+          return json(res, { error: 'Invalid JSON' }, 400);
+        }
+        var start = Date.now();
+        // Local SQLite ping
+        if (!cfg.host || cfg.type === 'local') {
+          try {
+            var Database = require('better-sqlite3');
+            var DB_PATH = process.env.DB_PATH || '/var/lib/dnsguard/dnsguard.db';
+            var db = new Database(DB_PATH, { readonly: true });
+            db.prepare('SELECT 1').get();
+            db.close();
+            return json(res, { ok: true, type: 'local', latencyMs: Date.now() - start, path: DB_PATH });
+          } catch(e) {
+            return json(res, { ok: false, error: e.message }, 502);
+          }
+        }
+        // Remote PostgreSQL ping
+        var { Client } = require('pg');
+        var client = new Client({
+          host:     cfg.host,
+          port:     parseInt(cfg.port, 10) || 5432,
+          database: cfg.database || 'dnsguard',
+          user:     cfg.user,
+          password: cfg.password,
+          connectionTimeoutMillis: 7000,
+          ssl:      cfg.sslmode && cfg.sslmode !== 'disable' ? { rejectUnauthorized: cfg.sslmode === 'verify-full' } : false,
+        });
+        client.connect(function(err) {
+          if (err) {
+            return json(res, { ok: false, error: err.message }, 502);
+          }
+          client.query('SELECT version()', function(qerr, result) {
+            client.end();
+            if (qerr) return json(res, { ok: false, error: qerr.message }, 502);
+            var version = result.rows[0] ? result.rows[0].version : 'unknown';
+            json(res, { ok: true, type: 'remote', latencyMs: Date.now() - start, host: cfg.host, port: cfg.port || 5432, version: version });
+          });
+        });
+      });
+      return;
+    }
     json(res, { error: 'Not found' }, 404);
   }).catch(function(err) { json(res, { error: err.message }, 500); });
 });
@@ -724,6 +774,18 @@ WantedBy=multi-user.target`;
 const BRIDGE_INSTALL = `# Create directory and copy script
 sudo mkdir -p /opt/unbound-bridge
 sudo cp unbound-bridge.js /opt/unbound-bridge/
+
+# Install Node.js dependencies
+cd /opt/unbound-bridge
+sudo npm init -y
+# Core dependency (always required)
+sudo npm install --save
+
+# Optional: install DB drivers for /db/ping support (v1.2+)
+# For remote PostgreSQL testing:
+sudo npm install pg
+# For local SQLite testing:
+sudo npm install better-sqlite3
 
 # Install systemd service
 sudo cp unbound-bridge.service /etc/systemd/system/
