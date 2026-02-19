@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock } from "lucide-react";
+import { useState, useRef } from "react";
+import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBridgeUrl, getBridgeHeaders } from "@/hooks/use-bridge-url";
 
@@ -70,6 +71,67 @@ export default function SettingsPage() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [endpointResults, setEndpointResults] = useState<EndpointResult[] | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  // ── Config keys that belong to this app ──────────────────────────────────
+  const CONFIG_KEYS = [
+    "unbound_bridge_url",
+    "unbound_bridge_api_key",
+    "unbound_dns_rules",
+    "unbound_setup_progress",
+  ];
+
+  const exportConfig = () => {
+    const config: Record<string, unknown> = {
+      _version: 1,
+      _exportedAt: new Date().toISOString(),
+    };
+    for (const key of CONFIG_KEYS) {
+      const val = localStorage.getItem(key);
+      if (val !== null) {
+        try { config[key] = JSON.parse(val); } catch { config[key] = val; }
+      }
+    }
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dns-shield-config-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Config exported", description: "Your configuration has been saved as a JSON file." });
+  };
+
+  const importConfig = (file: File) => {
+    setImportError(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const parsed = JSON.parse(e.target?.result as string);
+        if (typeof parsed !== "object" || parsed === null) throw new Error("Invalid format");
+        let count = 0;
+        for (const key of CONFIG_KEYS) {
+          if (key in parsed) {
+            const val = parsed[key];
+            localStorage.setItem(key, typeof val === "string" ? val : JSON.stringify(val));
+            count++;
+          }
+        }
+        // Refresh bridge URL inputs from storage
+        const newUrl = localStorage.getItem("unbound_bridge_url") || "";
+        const newKey = localStorage.getItem("unbound_bridge_api_key") || "";
+        setBridgeUrlState(newUrl);
+        setBridgeApiKeyState(newKey);
+        setBridgeInput(newUrl);
+        setApiKeyInput(newKey);
+        toast({ title: "Config imported", description: `${count} setting(s) restored successfully.` });
+      } catch {
+        setImportError("Invalid config file — make sure you're using a file exported from DNS Shield.");
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const runEndpointTests = async () => {
     setIsTesting(true);
@@ -482,6 +544,58 @@ export default function SettingsPage() {
             </label>
           ))}
         </div>
+      </motion.div>
+
+      {/* Import / Export Config */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-card border border-border rounded-lg p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Database className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Backup &amp; Restore</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-5">
+          Export your bridge URL, API key, DNS rules, and setup progress as a JSON file. Import it on another device or browser to restore your configuration.
+        </p>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={exportConfig}
+            className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary border border-primary/20 rounded-lg text-sm font-medium hover:bg-primary/20 transition-colors"
+          >
+            <Download className="h-4 w-4" /> Export Config
+          </button>
+
+          <button
+            onClick={() => importInputRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Upload className="h-4 w-4" /> Import Config
+          </button>
+
+          {/* Hidden file input */}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importConfig(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
+
+        {importError && (
+          <div className="flex items-center gap-2 mt-3 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-destructive">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {importError}
+          </div>
+        )}
+
+        <p className="text-[11px] text-muted-foreground mt-3">
+          The exported file contains: bridge URL, API key, DNS rules, and setup progress.
+          It does not include API tokens (those are session-only).
+        </p>
       </motion.div>
 
       {/* Save */}
