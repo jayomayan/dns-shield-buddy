@@ -84,6 +84,12 @@ export default function SettingsPage() {
     "okta_client_id",
     "okta_client_secret",
     "okta_enabled",
+    "api_tokens",
+    "log_retention",
+    "log_rotation",
+    "log_max_size",
+    "notify_blocked",
+    "notify_service",
   ];
 
   const exportConfig = () => {
@@ -157,33 +163,38 @@ export default function SettingsPage() {
   const [oktaClientId, setOktaClientId] = useState(() => localStorage.getItem("okta_client_id") || "");
   const [oktaSecret, setOktaSecret] = useState(() => localStorage.getItem("okta_client_secret") || "");
   const [oktaEnabled, setOktaEnabled] = useState(() => localStorage.getItem("okta_enabled") === "true");
-  const [logRetention, setLogRetention] = useState("30");
-  const [logRotation, setLogRotation] = useState("daily");
-  const [maxLogSize, setMaxLogSize] = useState("500");
-  const [notifyBlocked, setNotifyBlocked] = useState(true);
-  const [notifyService, setNotifyService] = useState(true);
+  const [logRetention, setLogRetention] = useState(() => localStorage.getItem("log_retention") || "30");
+  const [logRotation, setLogRotation] = useState(() => localStorage.getItem("log_rotation") || "daily");
+  const [maxLogSize, setMaxLogSize] = useState(() => localStorage.getItem("log_max_size") || "500");
+  const [notifyBlocked, setNotifyBlocked] = useState(() => localStorage.getItem("notify_blocked") !== "false");
+  const [notifyService, setNotifyService] = useState(() => localStorage.getItem("notify_service") !== "false");
 
-  // API Tokens
-  const [tokens, setTokens] = useState<ApiToken[]>([
-    {
-      id: "tok-1",
-      name: "CI/CD Pipeline",
-      token: "dng_k8s2Lm9xPqR4vW7yA1bC3dE5fG6hJ0nT8uI2oS4wX",
-      createdAt: "2024-11-20",
-      lastUsed: "2025-02-15",
-      expiresAt: "2025-11-20",
-      scopes: ["dns:read", "rules:read", "rules:write", "logs:read"],
-    },
-    {
-      id: "tok-2",
-      name: "Monitoring Service",
-      token: "dng_mN3pQ5rS7tU9vW1xY3zA5bC7dE9fG1hJ3kL5mN7pQ",
-      createdAt: "2025-01-10",
-      lastUsed: "2025-02-16",
-      expiresAt: null,
-      scopes: ["dns:read", "monitoring:read", "logs:read"],
-    },
-  ]);
+  // API Tokens — persisted to localStorage
+  const [tokens, setTokens] = useState<ApiToken[]>(() => {
+    try {
+      const stored = localStorage.getItem("api_tokens");
+      return stored ? JSON.parse(stored) : [
+        {
+          id: "tok-1",
+          name: "CI/CD Pipeline",
+          token: "dng_k8s2Lm9xPqR4vW7yA1bC3dE5fG6hJ0nT8uI2oS4wX",
+          createdAt: "2024-11-20",
+          lastUsed: "2025-02-15",
+          expiresAt: "2025-11-20",
+          scopes: ["dns:read", "rules:read", "rules:write", "logs:read"],
+        },
+        {
+          id: "tok-2",
+          name: "Monitoring Service",
+          token: "dng_mN3pQ5rS7tU9vW1xY3zA5bC7dE9fG1hJ3kL5mN7pQ",
+          createdAt: "2025-01-10",
+          lastUsed: "2025-02-16",
+          expiresAt: null,
+          scopes: ["dns:read", "monitoring:read", "logs:read"],
+        },
+      ];
+    } catch { return []; }
+  });
   const [showCreateToken, setShowCreateToken] = useState(false);
   const [newTokenName, setNewTokenName] = useState("");
   const [newTokenExpiry, setNewTokenExpiry] = useState("90");
@@ -198,6 +209,11 @@ export default function SettingsPage() {
     );
   };
 
+  const persistTokens = (updated: ApiToken[]) => {
+    localStorage.setItem("api_tokens", JSON.stringify(updated));
+    setTokens(updated);
+  };
+
   const createToken = () => {
     if (!newTokenName.trim()) return;
     const token: ApiToken = {
@@ -209,7 +225,8 @@ export default function SettingsPage() {
       expiresAt: newTokenExpiry === "never" ? null : new Date(Date.now() + +newTokenExpiry * 86400000).toISOString().split("T")[0],
       scopes: [...newTokenScopes],
     };
-    setTokens((prev) => [token, ...prev]);
+    const updated = [token, ...tokens];
+    persistTokens(updated);
     setJustCreatedToken(token.id);
     setRevealedTokens((prev) => new Set(prev).add(token.id));
     setNewTokenName("");
@@ -220,7 +237,7 @@ export default function SettingsPage() {
   };
 
   const revokeToken = (id: string) => {
-    setTokens((prev) => prev.filter((t) => t.id !== id));
+    persistTokens(tokens.filter((t) => t.id !== id));
   };
 
   const copyToken = (id: string, token: string) => {
@@ -567,6 +584,19 @@ export default function SettingsPage() {
               <input type="number" value={maxLogSize} onChange={(e) => setMaxLogSize(e.target.value)} className={inputClass} />
             </div>
           </div>
+          <div className="flex justify-end">
+            <button
+              onClick={() => {
+                localStorage.setItem("log_retention", logRetention);
+                localStorage.setItem("log_rotation", logRotation);
+                localStorage.setItem("log_max_size", maxLogSize);
+                toast({ title: "Log settings saved", description: "Query logging configuration updated." });
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
+            >
+              <Save className="h-3.5 w-3.5" /> Save
+            </button>
+          </div>
         </div>
       </motion.div>
 
@@ -579,10 +609,10 @@ export default function SettingsPage() {
         <p className="text-xs text-muted-foreground mb-6">Alert preferences for DNS events.</p>
         <div className="space-y-3">
           {[
-            { label: "High blocked query volume alerts", checked: notifyBlocked, onChange: setNotifyBlocked },
-            { label: "Service status change alerts", checked: notifyService, onChange: setNotifyService },
+            { label: "High blocked query volume alerts", key: "notify_blocked", checked: notifyBlocked, onChange: (v: boolean) => { setNotifyBlocked(v); localStorage.setItem("notify_blocked", String(v)); } },
+            { label: "Service status change alerts", key: "notify_service", checked: notifyService, onChange: (v: boolean) => { setNotifyService(v); localStorage.setItem("notify_service", String(v)); } },
           ].map((item) => (
-            <label key={item.label} className="flex items-center justify-between cursor-pointer group">
+            <label key={item.key} className="flex items-center justify-between cursor-pointer group">
               <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">{item.label}</span>
               <button onClick={() => item.onChange(!item.checked)} className={`relative w-10 h-5 rounded-full transition-colors ${item.checked ? "bg-primary" : "bg-muted"}`}>
                 <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-foreground transition-all ${item.checked ? "left-5" : "left-0.5"}`} />
