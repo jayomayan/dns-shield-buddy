@@ -3,6 +3,7 @@ import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBridgeUrl, getBridgeHeaders, setDbConfig } from "@/hooks/use-bridge-url";
+import { saveOktaConfig } from "@/hooks/use-okta-session";
 import { User } from "@supabase/supabase-js";
 import { useUserSettings } from "@/hooks/use-user-settings";
 
@@ -110,6 +111,12 @@ export default function SettingsPage({ user }: { user: User | null }) {
       setOktaClientId(settings.okta_client_id || "");
       setOktaSecret(settings.okta_client_secret || "");
       setOktaEnabled(settings.okta_enabled);
+      // Sync Okta config to localStorage so OktaGate can use it
+      saveOktaConfig({
+        domain:   settings.okta_domain || "",
+        clientId: settings.okta_client_id || "",
+        enabled:  settings.okta_enabled,
+      });
       setLogRetention(settings.log_retention);
       setLogRotation(settings.log_rotation);
       setMaxLogSize(settings.log_max_size);
@@ -489,13 +496,15 @@ export default function SettingsPage({ user }: { user: User | null }) {
                 return;
               }
               setOktaEnabled(true);
+              // Persist to localStorage immediately so OktaGate activates on next visit
+              saveOktaConfig({ domain: oktaDomain.trim(), clientId: oktaClientId.trim(), enabled: true });
               const ok = await saveSettings({
                 okta_domain: oktaDomain.trim(),
                 okta_client_id: oktaClientId.trim(),
                 okta_client_secret: oktaSecret.trim(),
                 okta_enabled: true,
               });
-              if (ok) toast({ title: "Okta config saved", description: "SSO configuration saved and synced to cloud." });
+              if (ok) toast({ title: "Okta SSO enabled", description: "SSO is now active. Users must sign in with Okta to access the platform." });
             }}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
           >
@@ -560,8 +569,9 @@ export default function SettingsPage({ user }: { user: User | null }) {
               <button
                 onClick={async () => {
                   setOktaEnabled(false);
+                  saveOktaConfig({ domain: oktaDomain, clientId: oktaClientId, enabled: false });
                   await saveSettings({ okta_enabled: false });
-                  toast({ title: "Okta disabled", description: "SSO has been disabled." });
+                  toast({ title: "Okta disabled", description: "SSO has been disabled. Users can now sign in with email/password." });
                 }}
                 className="text-[11px] text-muted-foreground hover:text-destructive transition-colors ml-4 shrink-0"
               >
