@@ -80,6 +80,10 @@ export default function SettingsPage() {
     "unbound_bridge_api_key",
     "unbound_dns_rules",
     "unbound_setup_progress",
+    "okta_domain",
+    "okta_client_id",
+    "okta_client_secret",
+    "okta_enabled",
   ];
 
   const exportConfig = () => {
@@ -149,9 +153,10 @@ export default function SettingsPage() {
     setBridgeApiKeyState(apiKeyInput);
   };
 
-  const [oktaDomain, setOktaDomain] = useState("");
-  const [oktaClientId, setOktaClientId] = useState("");
-  const [oktaSecret, setOktaSecret] = useState("");
+  const [oktaDomain, setOktaDomain] = useState(() => localStorage.getItem("okta_domain") || "");
+  const [oktaClientId, setOktaClientId] = useState(() => localStorage.getItem("okta_client_id") || "");
+  const [oktaSecret, setOktaSecret] = useState(() => localStorage.getItem("okta_client_secret") || "");
+  const [oktaEnabled, setOktaEnabled] = useState(() => localStorage.getItem("okta_enabled") === "true");
   const [logRetention, setLogRetention] = useState("30");
   const [logRotation, setLogRotation] = useState("daily");
   const [maxLogSize, setMaxLogSize] = useState("500");
@@ -353,10 +358,32 @@ export default function SettingsPage() {
       </motion.div>
       {/* Okta SSO */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
-        <div className="flex items-center gap-2 mb-1">
-          <Key className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Okta SSO Configuration</h3>
-          <span className="px-2 py-0.5 rounded text-[10px] bg-primary/10 text-primary border border-primary/20 ml-2">Platform Users</span>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <Key className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold">Okta SSO Configuration</h3>
+            <span className="px-2 py-0.5 rounded text-[10px] bg-primary/10 text-primary border border-primary/20 ml-2">Platform Users</span>
+            {oktaEnabled && (
+              <span className="px-2 py-0.5 rounded text-[10px] bg-success/10 text-success border border-success/20">Enabled</span>
+            )}
+          </div>
+          <button
+            onClick={() => {
+              if (!oktaDomain.trim() || !oktaClientId.trim() || !oktaSecret.trim()) {
+                toast({ title: "Missing fields", description: "Fill in all three Okta fields before saving.", variant: "destructive" });
+                return;
+              }
+              localStorage.setItem("okta_domain", oktaDomain.trim());
+              localStorage.setItem("okta_client_id", oktaClientId.trim());
+              localStorage.setItem("okta_client_secret", oktaSecret.trim());
+              localStorage.setItem("okta_enabled", "true");
+              setOktaEnabled(true);
+              toast({ title: "Okta config saved", description: "SSO configuration saved and enabled." });
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Save className="h-3.5 w-3.5" /> Save & Enable
+          </button>
         </div>
         <p className="text-xs text-muted-foreground mb-6">Configure Okta Single Sign-On for platform user authentication. API access uses token-based authentication (see below).</p>
 
@@ -375,10 +402,29 @@ export default function SettingsPage() {
               <input type="password" value={oktaSecret} onChange={(e) => setOktaSecret(e.target.value)} placeholder="••••••••" className={inputClass} />
             </div>
           </div>
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/5 border border-warning/20">
-            <Shield className="h-4 w-4 text-warning shrink-0" />
-            <p className="text-xs text-warning">Okta not configured — temporary admin access enabled. Configure SSO to enforce enterprise authentication for platform users.</p>
-          </div>
+          {oktaEnabled ? (
+            <div className="flex items-center justify-between p-3 rounded-lg bg-success/5 border border-success/20">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+                <p className="text-xs text-success">Okta SSO is active — enterprise authentication enforced for platform users.</p>
+              </div>
+              <button
+                onClick={() => {
+                  localStorage.setItem("okta_enabled", "false");
+                  setOktaEnabled(false);
+                  toast({ title: "Okta disabled", description: "SSO has been disabled." });
+                }}
+                className="text-[11px] text-muted-foreground hover:text-destructive transition-colors ml-4 shrink-0"
+              >
+                Disable
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/5 border border-warning/20">
+              <Shield className="h-4 w-4 text-warning shrink-0" />
+              <p className="text-xs text-warning">Okta not configured — temporary admin access enabled. Configure SSO to enforce enterprise authentication for platform users.</p>
+            </div>
+          )}
         </div>
       </motion.div>
 
