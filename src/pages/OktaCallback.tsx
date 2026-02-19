@@ -15,25 +15,58 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
-function getErrorGuidance(error: string): string | null {
+function getErrorGuidance(error: string): { text: string; steps?: string[] } | null {
   const e = error.toLowerCase();
+
+  if (e.includes("proof key for code exchange") || e.includes("pkce") || e.includes("code_challenge")) {
+    return {
+      text: "Okta requires the app to be configured as a Single-Page Application with PKCE.",
+      steps: [
+        "In Okta Admin → Applications → your app → General tab",
+        "Under 'Client Credentials', set 'Client authentication' to None (PKCE)",
+        "Or change the app type to 'Single-Page Application'",
+        "Leave Client Secret blank here — PKCE apps don't use one",
+        "Save in Okta, then click 'Save & Retry Login' below",
+      ],
+    };
+  }
   if (e.includes("client authentication failed") || e.includes("invalid_client")) {
-    return "Your Okta app type is likely 'Web' (confidential). Enter the Client Secret below and retry. Or set 'Client authentication' to 'None (PKCE)' in Okta for a public SPA app.";
+    return {
+      text: "Client credentials are invalid — either the secret is wrong or the app type is mismatched.",
+      steps: [
+        "If your app is a Web (confidential) app: enter the correct Client Secret below",
+        "If your app is a SPA: clear the Client Secret field and set 'Client authentication' to None (PKCE) in Okta",
+      ],
+    };
   }
   if (e.includes("redirect_uri") || e.includes("redirect uri")) {
-    return "The Redirect URI is not registered in Okta. Copy it below and add it to your Okta app's Sign-in redirect URIs.";
+    return {
+      text: "The Redirect URI is not registered in Okta.",
+      steps: [
+        "Copy the Redirect URI shown below",
+        "In Okta Admin → Applications → your app → Sign On tab",
+        "Add it to 'Sign-in redirect URIs' and save",
+      ],
+    };
   }
   if (e.includes("state mismatch") || e.includes("csrf")) {
-    return "Security state mismatch — can happen in private browsing. Try again in a normal browser window.";
+    return { text: "Security state mismatch — can happen in private browsing or when cookies are blocked. Try in a normal browser window." };
   }
-  if (e.includes("expired") || e.includes("pkce")) {
-    return "Login session expired (10-minute window). Try signing in again.";
+  if (e.includes("expired")) {
+    return { text: "Login session expired (10-minute PKCE window). Try signing in again." };
   }
   if (e.includes("access_denied")) {
-    return "Access denied by Okta. Check that your user is assigned to the application and that the sign-on policy allows access.";
+    return {
+      text: "Access denied by Okta.",
+      steps: [
+        "Check that your user is assigned to the application in Okta",
+        "Review the app's sign-on policy in Okta Admin",
+      ],
+    };
   }
   return null;
 }
+
 
 export default function OktaCallback() {
   const navigate   = useNavigate();
@@ -121,9 +154,19 @@ export default function OktaCallback() {
             {guidance && (
               <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/5 border border-warning/20">
                 <Info className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />
-                <p className="text-[11px] text-muted-foreground leading-relaxed">{guidance}</p>
+                <div className="space-y-1.5">
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">{guidance.text}</p>
+                  {guidance.steps && (
+                    <ol className="list-decimal list-inside space-y-0.5">
+                      {guidance.steps.map((step, i) => (
+                        <li key={i} className="text-[11px] text-muted-foreground leading-relaxed">{step}</li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
               </div>
             )}
+
 
             {/* ─── Editable diagnostic panel ─── */}
             <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
