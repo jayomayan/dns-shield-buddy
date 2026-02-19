@@ -163,6 +163,36 @@ export default function SettingsPage() {
   const [oktaClientId, setOktaClientId] = useState(() => localStorage.getItem("okta_client_id") || "");
   const [oktaSecret, setOktaSecret] = useState(() => localStorage.getItem("okta_client_secret") || "");
   const [oktaEnabled, setOktaEnabled] = useState(() => localStorage.getItem("okta_enabled") === "true");
+  const [oktaTesting, setOktaTesting] = useState(false);
+  const [oktaTestResult, setOktaTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const testOktaIntegration = async () => {
+    const domain = oktaDomain.trim();
+    if (!domain) {
+      toast({ title: "Missing Okta Domain", description: "Enter your Okta domain before testing.", variant: "destructive" });
+      return;
+    }
+    setOktaTesting(true);
+    setOktaTestResult(null);
+    try {
+      const base = domain.replace(/\/$/, "");
+      const res = await fetch(`${base}/.well-known/openid-configuration`, {
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const issuer = json.issuer ?? domain;
+        setOktaTestResult({ ok: true, message: `Connected — issuer: ${issuer}` });
+      } else {
+        setOktaTestResult({ ok: false, message: `Okta responded with HTTP ${res.status}. Check your domain URL.` });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error && e.name === "TimeoutError" ? "Request timed out — domain unreachable." : "Could not reach Okta domain. Check the URL and network access.";
+      setOktaTestResult({ ok: false, message: msg });
+    } finally {
+      setOktaTesting(false);
+    }
+  };
   const [logRetention, setLogRetention] = useState(() => localStorage.getItem("log_retention") || "30");
   const [logRotation, setLogRotation] = useState(() => localStorage.getItem("log_rotation") || "daily");
   const [maxLogSize, setMaxLogSize] = useState(() => localStorage.getItem("log_max_size") || "500");
@@ -419,6 +449,38 @@ export default function SettingsPage() {
               <input type="password" value={oktaSecret} onChange={(e) => setOktaSecret(e.target.value)} placeholder="••••••••" className={inputClass} />
             </div>
           </div>
+          {/* Test button + result */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={testOktaIntegration}
+              disabled={oktaTesting}
+              className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            >
+              {oktaTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              {oktaTesting ? "Testing…" : "Test Okta Integration"}
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {oktaTestResult && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                className={`flex items-start gap-2 p-3 rounded-lg border text-xs ${
+                  oktaTestResult.ok
+                    ? "bg-success/5 border-success/20 text-success"
+                    : "bg-destructive/5 border-destructive/20 text-destructive"
+                }`}
+              >
+                {oktaTestResult.ok
+                  ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  : <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />}
+                <span>{oktaTestResult.message}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {oktaEnabled ? (
             <div className="flex items-center justify-between p-3 rounded-lg bg-success/5 border border-success/20">
               <div className="flex items-center gap-2">
