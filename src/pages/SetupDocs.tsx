@@ -710,7 +710,8 @@ var server = http.createServer(function(req, res) {
         // Local SQLite ping
         if (!cfg.host || cfg.type === 'local') {
           try {
-            var Database = require('better-sqlite3');
+            var path = require('path');
+            var Database = require(path.join(__dirname, 'node_modules', 'better-sqlite3'));
             var DB_PATH = process.env.DB_PATH || '/var/lib/dnsguard/dnsguard.db';
             var db = new Database(DB_PATH, { readonly: true });
             db.prepare('SELECT 1').get();
@@ -721,7 +722,8 @@ var server = http.createServer(function(req, res) {
           }
         }
         // Remote PostgreSQL ping
-        var { Client } = require('pg');
+        var path = require('path');
+        var { Client } = require(path.join(__dirname, 'node_modules', 'pg'));
         var client = new Client({
           host:     cfg.host,
           port:     parseInt(cfg.port, 10) || 5432,
