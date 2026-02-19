@@ -7,7 +7,7 @@ import {
   ExternalLink, Copy, Check, Monitor, Layers, HardDrive,
 } from "lucide-react";
 
-type Section = "setup" | "bridge" | "walkthrough" | "architecture" | "api" | "okta" | "faq";
+type Section = "setup" | "bridge" | "walkthrough" | "architecture" | "api" | "okta" | "database" | "faq";
 
 const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: "setup", label: "Setup Guide", icon: Download },
@@ -16,6 +16,7 @@ const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: "architecture", label: "Architecture", icon: Layers },
   { id: "api", label: "API Reference", icon: Terminal },
   { id: "okta", label: "Okta SSO", icon: Key },
+  { id: "database", label: "Database Setup", icon: Database },
   { id: "faq", label: "FAQ", icon: FileText },
 ];
 
@@ -1550,7 +1551,191 @@ export default function SetupDocs() {
           </div>
         )}
 
+        {/* ─── Database Setup ─── */}
+        {activeSection === "database" && (
+          <div className="space-y-6">
+            <div className="bg-card border border-border rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-3">
+                <Database className="h-5 w-5 text-primary" />
+                <h2 className="text-base font-semibold">Database Setup</h2>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+                DNSGuard stores DNS rules, audit logs, and configuration in a PostgreSQL-compatible database. Run it <strong className="text-foreground">locally</strong> on the same machine as Unbound for simple single-server installs, or connect to a <strong className="text-foreground">remote</strong> PostgreSQL server for high-availability and centralised management. Switch modes anytime in <code className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded">Settings → Database Configuration</code>.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { icon: HardDrive, title: "Local Database", badge: "Simple", badgeClass: "bg-muted text-muted-foreground border-border", desc: "SQLite or embedded PostgreSQL on the same host. Zero extra infrastructure — ideal for single-server deployments." },
+                  { icon: Network, title: "Remote Database", badge: "HA / Enterprise", badgeClass: "bg-primary/10 text-primary border-primary/20", desc: "Any PostgreSQL 14+ server (self-hosted, RDS, Cloud SQL, Azure, Supabase). Supports pooling, replicas & backups." },
+                ].map((c) => (
+                  <div key={c.title} className="flex flex-col gap-2 p-4 rounded-lg bg-muted/40 border border-border">
+                    <div className="flex items-center gap-2">
+                      <c.icon className="h-4 w-4 text-primary" />
+                      <p className="text-xs font-semibold">{c.title}</p>
+                      <span className={`px-2 py-0.5 rounded text-[10px] border ml-auto ${c.badgeClass}`}>{c.badge}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">{c.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── LOCAL ── */}
+            <div className="bg-card border border-border rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <HardDrive className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">Local Database — Setup Instructions</h3>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-muted text-muted-foreground border border-border ml-2">Embedded</span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-5 leading-relaxed">Uses <strong className="text-foreground">SQLite</strong> by default — a single file, no server process required. Perfect for a self-contained install.</p>
+              {[
+                { num:"01", title:"Install SQLite", body:(
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>SQLite ships with most Linux distros. Verify it is available:</p>
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`sqlite3 --version\n\n# If missing:\nsudo apt update && sudo apt install -y sqlite3 libsqlite3-dev`}</pre>
+                    <p>DNSGuard automatically creates and migrates the database file on first start.</p>
+                  </div>
+                )},
+                { num:"02", title:"Database file location", body:(
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>The database file is written to:</p>
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`/var/lib/dnsguard/dnsguard.db`}</pre>
+                    <p>Create the directory and set ownership:</p>
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`sudo mkdir -p /var/lib/dnsguard\nsudo chown dnsguard:dnsguard /var/lib/dnsguard\nsudo chmod 750 /var/lib/dnsguard`}</pre>
+                  </div>
+                )},
+                { num:"03", title:"Enable local mode in Settings", body:(
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <ol className="list-decimal list-inside space-y-1.5 text-xs">
+                      <li>Go to <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">Settings → Database Configuration</code>.</li>
+                      <li>Select <strong className="text-foreground">Local Database</strong>.</li>
+                      <li>Click <strong className="text-foreground">Save</strong>. No other fields are needed.</li>
+                      <li>Restart DNSGuard for the change to take effect.</li>
+                    </ol>
+                  </div>
+                )},
+                { num:"04", title:"Backup the local database", body:(
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`# Safe copy while stopped:\nsudo systemctl stop dnsguard\nsudo cp /var/lib/dnsguard/dnsguard.db /backup/dnsguard-$(date +%F).db\nsudo systemctl start dnsguard\n\n# Online backup (no downtime):\nsqlite3 /var/lib/dnsguard/dnsguard.db ".backup '/backup/dnsguard-$(date +%F).db'"`}</pre>
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/5 border border-warning/20 text-xs text-warning"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /><span>Schedule backups via cron. Losing the local database means losing all DNS rules and audit history.</span></div>
+                  </div>
+                )},
+              ].map((step) => (
+                <div key={step.num} className="mb-5 last:mb-0">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-muted border border-border text-[10px] font-bold font-mono text-foreground shrink-0">{step.num}</span>
+                    <h4 className="text-xs font-semibold text-foreground">{step.title}</h4>
+                  </div>
+                  {step.body}
+                </div>
+              ))}
+            </div>
+
+            {/* ── REMOTE ── */}
+            <div className="bg-card border border-border rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <Network className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">Remote Database — Setup Instructions</h3>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-primary/10 text-primary border border-primary/20 ml-2">PostgreSQL 14+</span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-5 leading-relaxed">Supports self-hosted PostgreSQL, Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Supabase, and any PgBouncer-compatible pool.</p>
+              {[
+                { num:"01", title:"Install & start PostgreSQL (self-hosted only)", body:(
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>Skip this step if using a managed service (RDS, Cloud SQL, etc.).</p>
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`sudo apt update\nsudo apt install -y postgresql-16 postgresql-client-16\nsudo systemctl enable --now postgresql\nsudo systemctl status postgresql`}</pre>
+                  </div>
+                )},
+                { num:"02", title:"Create the DNSGuard database & user", body:(
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`sudo -u postgres psql\n\nCREATE DATABASE dnsguard;\nCREATE USER dnsguard_user WITH PASSWORD 'your-strong-password';\n\nGRANT CONNECT ON DATABASE dnsguard TO dnsguard_user;\nGRANT USAGE, CREATE ON SCHEMA public TO dnsguard_user;\nGRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO dnsguard_user;\nGRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO dnsguard_user;\n\nALTER DEFAULT PRIVILEGES IN SCHEMA public\n  GRANT ALL ON TABLES TO dnsguard_user;\nALTER DEFAULT PRIVILEGES IN SCHEMA public\n  GRANT ALL ON SEQUENCES TO dnsguard_user;\n\\q`}</pre>
+                  </div>
+                )},
+                { num:"03", title:"Allow remote connections (self-hosted only)", body:(
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>Edit <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">postgresql.conf</code>:</p>
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`# /etc/postgresql/16/main/postgresql.conf\nlisten_addresses = '*'    # or your DB server's specific IP`}</pre>
+                    <p>Add a rule to <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">pg_hba.conf</code>:</p>
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`# TYPE  DATABASE    USER           ADDRESS                 METHOD\nhost    dnsguard    dnsguard_user  <dnsguard-host-ip>/32   scram-sha-256`}</pre>
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`sudo systemctl reload postgresql`}</pre>
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/5 border border-warning/20 text-xs text-warning"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /><span>Open port 5432 only to the DNSGuard server IP. Never expose PostgreSQL to 0.0.0.0 without a firewall rule.</span></div>
+                  </div>
+                )},
+                { num:"04", title:"Configure DNSGuard Settings", body:(
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>Go to <code className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded">Settings → Database Configuration</code>, select <strong className="text-foreground">Remote Database</strong>, and fill in:</p>
+                    <div className="rounded-lg border border-border overflow-hidden text-xs">
+                      <table className="w-full">
+                        <thead className="bg-muted/60"><tr><th className="text-left px-4 py-2 font-medium text-foreground">Field</th><th className="text-left px-4 py-2 font-medium text-foreground">Example</th><th className="text-left px-4 py-2 font-medium text-foreground">Notes</th></tr></thead>
+                        <tbody className="divide-y divide-border">
+                          {[["Host","db.example.com","Hostname or IP of the PostgreSQL server"],["Port","5432","Default PostgreSQL port"],["Database Name","dnsguard","Created in Step 02"],["Username","dnsguard_user","Created in Step 02"],["Password","your-strong-password","Stored encrypted"]].map(([f,v,n])=>(
+                            <tr key={f}><td className="px-4 py-2.5 font-mono text-[10px] text-foreground">{f}</td><td className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground">{v}</td><td className="px-4 py-2.5 text-muted-foreground">{n}</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p>Click <strong className="text-foreground">Save</strong>, then restart DNSGuard.</p>
+                  </div>
+                )},
+                { num:"05", title:"Enable SSL / TLS for the connection", body:(
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>Always encrypt traffic between DNSGuard and the remote database.</p>
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`# Verify SSL on server:\nsudo -u postgres psql -c "SHOW ssl;"   # → on\n\n# Test TLS from DNSGuard host:\npsql "host=db.example.com dbname=dnsguard user=dnsguard_user sslmode=require" \\\n  -c "SELECT ssl_is_used();"           # → t`}</pre>
+                    <div className="rounded-lg border border-border overflow-hidden text-xs">
+                      <table className="w-full">
+                        <thead className="bg-muted/60"><tr><th className="text-left px-4 py-2 font-medium text-foreground">sslmode</th><th className="text-left px-4 py-2 font-medium text-foreground">When to use</th></tr></thead>
+                        <tbody className="divide-y divide-border">
+                          {[["disable","Never — plaintext, not recommended"],["require","Encrypt traffic, skip cert verification (OK for private networks)"],["verify-ca","Encrypt + verify server cert against a trusted CA"],["verify-full","Encrypt + verify cert + hostname (recommended for production)"]].map(([m,d])=>(
+                            <tr key={m}><td className="px-4 py-2.5 font-mono text-[10px] text-foreground">{m}</td><td className="px-4 py-2.5 text-muted-foreground">{d}</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )},
+                { num:"06", title:"Run migrations & verify", body:(
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>DNSGuard runs schema migrations automatically on start. Verify tables exist:</p>
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`psql "host=db.example.com dbname=dnsguard user=dnsguard_user sslmode=require" \\\n  -c "\\dt public.*"\n# Expected: dns_rules, query_logs, user_settings, audit_events`}</pre>
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-success/5 border border-success/20 text-xs text-success"><CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" /><span>Once migrations succeed, check the Query Logs page to confirm live data is flowing into the remote database.</span></div>
+                  </div>
+                )},
+              ].map((step) => (
+                <div key={step.num} className="mb-6 last:mb-0">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-muted border border-border text-[10px] font-bold font-mono text-foreground shrink-0">{step.num}</span>
+                    <h4 className="text-xs font-semibold text-foreground">{step.title}</h4>
+                  </div>
+                  {step.body}
+                </div>
+              ))}
+            </div>
+
+            {/* Connection string reference */}
+            <div className="bg-card border border-border rounded-lg p-6">
+              <div className="flex items-center gap-2 mb-4"><FileText className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Quick Reference — Connection Strings</h3></div>
+              <div className="space-y-3">
+                {[
+                  { label:"Local SQLite", value:"sqlite:///var/lib/dnsguard/dnsguard.db" },
+                  { label:"Local PostgreSQL (Unix socket)", value:"postgresql:///dnsguard?host=/var/run/postgresql" },
+                  { label:"Remote — no SSL", value:"postgresql://dnsguard_user:password@db.host:5432/dnsguard" },
+                  { label:"Remote — SSL required", value:"postgresql://dnsguard_user:password@db.host:5432/dnsguard?sslmode=require" },
+                  { label:"Remote — SSL verify-full", value:"postgresql://dnsguard_user:password@db.host:5432/dnsguard?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt" },
+                  { label:"Amazon RDS", value:"postgresql://dnsguard_user:password@mydb.xxxx.us-east-1.rds.amazonaws.com:5432/dnsguard?sslmode=require" },
+                  { label:"Supabase (pooler)", value:"postgresql://postgres.xxxx:password@aws-0-us-east-1.pooler.supabase.com:6543/postgres" },
+                ].map((c) => (
+                  <div key={c.label}>
+                    <p className="text-[11px] font-medium text-muted-foreground mb-1">{c.label}</p>
+                    <code className="block w-full font-mono text-[10px] bg-muted px-3 py-2 rounded border border-border break-all text-foreground">{c.value}</code>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-4">Replace placeholders with your actual credentials. DNSGuard also accepts these as the <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">DATABASE_URL</code> environment variable.</p>
+            </div>
+          </div>
+        )}
+
         {/* ─── FAQ ─── */}
+
 
         {activeSection === "faq" && (
           <div className="space-y-2">
