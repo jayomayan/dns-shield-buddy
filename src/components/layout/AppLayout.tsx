@@ -9,6 +9,8 @@ import { useTheme } from "@/components/ThemeProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { toast } from "@/hooks/use-toast";
+import { useOktaContext } from "@/App";
+import { getOktaConfig } from "@/hooks/use-okta-session";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -25,6 +27,33 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
   const [themeOpen, setThemeOpen] = useState(false);
   const location = useLocation();
   const { theme, setTheme } = useTheme();
+  const { session: oktaSession, signOut: oktaSignOut } = useOktaContext();
+  const oktaConfig = getOktaConfig();
+
+  const handleSignOut = async () => {
+    // Sign out of Supabase
+    await supabase.auth.signOut();
+    // Sign out of Okta if enabled
+    if (oktaConfig?.enabled && oktaSession) {
+      oktaSignOut();
+      // Redirect to Okta logout if possible
+      try {
+        const domain = oktaConfig.domain.replace(/\/$/, "");
+        const idToken = oktaSession.idToken;
+        const logoutUrl = `${domain}/oauth2/v1/logout?id_token_hint=${encodeURIComponent(idToken)}&post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
+        window.location.href = logoutUrl;
+        return;
+      } catch {
+        // fall through to toast
+      }
+    }
+    toast({ title: "Signed out" });
+  };
+
+  // Determine display user — prefer Okta session
+  const displayName = oktaSession?.name || oktaSession?.email || user?.email || null;
+  const displayInitial = (oktaSession?.name || oktaSession?.email || user?.email || "U").charAt(0).toUpperCase();
+  const isOktaUser = !!oktaSession;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -145,20 +174,30 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
                 </>
               )}
             </div>
+
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-success/10 border border-success/20">
               <div className="w-2 h-2 rounded-full bg-success animate-pulse-glow" />
               <span className="text-xs font-mono text-success">ONLINE</span>
             </div>
-            {user && (
+
+            {/* User info — show Okta user or Supabase user */}
+            {(isOktaUser || user) && (
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
-                    {user.email?.charAt(0).toUpperCase() ?? "U"}
+                  <div className="relative w-8 h-8">
+                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
+                      {displayInitial}
+                    </div>
+                    {isOktaUser && (
+                      <span className="absolute -bottom-0.5 -right-0.5 text-[8px] bg-primary text-primary-foreground rounded-full px-1 leading-tight font-bold">
+                        SSO
+                      </span>
+                    )}
                   </div>
-                  <span className="hidden md:inline text-xs truncate max-w-[140px]">{user.email}</span>
+                  <span className="hidden md:inline text-xs truncate max-w-[140px]">{displayName}</span>
                 </div>
                 <button
-                  onClick={async () => { await supabase.auth.signOut(); toast({ title: "Signed out" }); }}
+                  onClick={handleSignOut}
                   className="p-2 text-muted-foreground hover:text-destructive transition-colors"
                   title="Sign out"
                 >
