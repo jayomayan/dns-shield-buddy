@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, HardDrive, Wifi, LogIn } from "lucide-react";
+import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, HardDrive, Wifi } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { useBridgeUrl, getBridgeHeaders, setDbConfig } from "@/hooks/use-bridge-url";
+import { useBridgeUrl, getBridgeHeaders, setDbConfig, getBridgeUrl } from "@/hooks/use-bridge-url";
 import { saveOktaConfig } from "@/hooks/use-okta-session";
 import { User } from "@supabase/supabase-js";
-import { useUserSettings } from "@/hooks/use-user-settings";
+import { fetchBridgeSettings, saveBridgeSettings, type AppSettings } from "@/lib/unbound-bridge";
 
 interface EndpointResult {
   path: string;
@@ -68,7 +68,6 @@ function generateToken(): string {
 }
 
 export default function SettingsPage({ user }: { user: User | null }) {
-  const { settings, loading: settingsLoading, saving, saveSettings } = useUserSettings(user);
   const { url: bridgeUrl, setUrl: setBridgeUrlState, apiKey: bridgeApiKey, setApiKey: setBridgeApiKeyState } = useBridgeUrl();
   const [bridgeInput, setBridgeInput] = useState(bridgeUrl);
   const [apiKeyInput, setApiKeyInput] = useState(bridgeApiKey);
@@ -77,6 +76,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
   const [isTesting, setIsTesting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
 
   // Database config state
   const [dbType, setDbType] = useState("local");
@@ -104,53 +104,73 @@ export default function SettingsPage({ user }: { user: User | null }) {
   const [notifyBlocked, setNotifyBlocked] = useState(true);
   const [notifyService, setNotifyService] = useState(true);
 
-  // Sync from DB once loaded
-  useEffect(() => {
-    if (!settingsLoading) {
-      setOktaDomain(settings.okta_domain || "");
-      setOktaClientId(settings.okta_client_id || "");
-      setOktaSecret(settings.okta_client_secret || "");
-      setOktaEnabled(settings.okta_enabled);
-      // Sync Okta config to localStorage so OktaGate can use it
-      saveOktaConfig({
-        domain:   settings.okta_domain || "",
-        clientId: settings.okta_client_id || "",
-        enabled:  settings.okta_enabled,
-      });
-      setLogRetention(settings.log_retention);
-      setLogRotation(settings.log_rotation);
-      setMaxLogSize(settings.log_max_size);
-      setNotifyBlocked(settings.notify_blocked);
-      setNotifyService(settings.notify_service);
-      const loadedDbType = settings.db_type || "local";
-      const loadedDbHost = settings.db_host || "";
-      const loadedDbPort = settings.db_port || "5432";
-      const loadedDbName = settings.db_name || "";
-      const loadedDbUser = settings.db_user || "";
-      const loadedDbPassword = settings.db_password || "";
+  // API Tokens
+  const [tokens, setTokens] = useState<ApiToken[]>([]);
+  const [showCreateToken, setShowCreateToken] = useState(false);
+  const [newTokenName, setNewTokenName] = useState("");
+  const [newTokenExpiry, setNewTokenExpiry] = useState("90");
+  const [newTokenScopes, setNewTokenScopes] = useState<string[]>(["dns:read"]);
+  const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null);
+
+  /** Save a partial settings object to the bridge's configured DB. */
+  const saveSettings = useCallback(async (updates: Partial<AppSettings>): Promise<boolean> => {
+    try {
+      await saveBridgeSettings(updates);
+      return true;
+    } catch (e) {
+      console.error("Failed to save settings via bridge:", e);
+      toast({ title: "Save failed", description: "Could not reach the bridge. Check the bridge URL and try again.", variant: "destructive" });
+      return false;
+    }
+  }, []);
+
+  /** Load all settings from the bridge's configured DB on mount. */
+  const loadSettings = useCallback(async () => {
+    const url = getBridgeUrl();
+    if (!url) return;
+    setSettingsLoading(true);
+    try {
+      const data = await fetchBridgeSettings();
+      if (data.okta_domain !== undefined) setOktaDomain(data.okta_domain || "");
+      if (data.okta_client_id !== undefined) setOktaClientId(data.okta_client_id || "");
+      if (data.okta_client_secret !== undefined) setOktaSecret(data.okta_client_secret || "");
+      if (data.okta_enabled !== undefined) {
+        setOktaEnabled(data.okta_enabled);
+        saveOktaConfig({ domain: data.okta_domain || "", clientId: data.okta_client_id || "", enabled: data.okta_enabled });
+      }
+      if (data.log_retention) setLogRetention(data.log_retention);
+      if (data.log_rotation) setLogRotation(data.log_rotation);
+      if (data.log_max_size) setMaxLogSize(data.log_max_size);
+      if (data.notify_blocked !== undefined) setNotifyBlocked(data.notify_blocked);
+      if (data.notify_service !== undefined) setNotifyService(data.notify_service);
+      const loadedDbType = data.db_type || "local";
+      const loadedDbHost = data.db_host || "";
+      const loadedDbPort = data.db_port || "5432";
+      const loadedDbName = data.db_name || "";
+      const loadedDbUser = data.db_user || "";
+      const loadedDbPassword = data.db_password || "";
       setDbType(loadedDbType);
       setDbHost(loadedDbHost);
       setDbPort(loadedDbPort);
       setDbName(loadedDbName);
       setDbUser(loadedDbUser);
       setDbPassword(loadedDbPassword);
-      // Sync db config to localStorage so bridge calls use the right database immediately
-      setDbConfig({
-        db_type: loadedDbType,
-        db_host: loadedDbHost || null,
-        db_port: loadedDbPort || null,
-        db_name: loadedDbName || null,
-        db_user: loadedDbUser || null,
-        db_password: loadedDbPassword || null,
-      });
-      if (settings.bridge_url) { setBridgeUrlState(settings.bridge_url); setBridgeInput(settings.bridge_url); }
-      if (settings.bridge_api_key) { setBridgeApiKeyState(settings.bridge_api_key); setApiKeyInput(settings.bridge_api_key); }
-      if (settings.api_tokens) {
-        try { setTokens(settings.api_tokens as unknown as ApiToken[]); } catch { /* ignore */ }
+      setDbConfig({ db_type: loadedDbType, db_host: loadedDbHost || null, db_port: loadedDbPort || null, db_name: loadedDbName || null, db_user: loadedDbUser || null, db_password: loadedDbPassword || null });
+      if (data.bridge_url) { setBridgeUrlState(data.bridge_url); setBridgeInput(data.bridge_url); }
+      if (data.bridge_api_key) { setBridgeApiKeyState(data.bridge_api_key); setApiKeyInput(data.bridge_api_key); }
+      if (data.api_tokens) {
+        try { setTokens(data.api_tokens as ApiToken[]); } catch { /* ignore */ }
       }
+    } catch {
+      // Bridge not reachable yet — settings remain at defaults from localStorage
+    } finally {
+      setSettingsLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settingsLoading]);
+  }, [setBridgeUrlState, setBridgeApiKeyState]);
+
+  useEffect(() => { loadSettings(); }, [loadSettings]);
 
   const exportConfig = () => {
     const config: Record<string, unknown> = {
@@ -232,7 +252,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
           db_user: parsed.db_user || null,
           db_password: parsed.db_password || null,
         });
-        toast({ title: "Config imported", description: "Settings restored and synced to cloud." });
+        toast({ title: "Config imported", description: "Settings restored and saved to configured database." });
       } catch {
         setImportError("Invalid config file — make sure you're using a file exported from DNS Shield.");
       }
@@ -253,8 +273,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
     setBridgeUrlState(bridgeInput);
     setBridgeApiKeyState(apiKeyInput);
     const ok = await saveSettings({ bridge_url: bridgeInput || null, bridge_api_key: apiKeyInput || null });
-    if (ok) toast({ title: "Bridge settings saved", description: "Connection settings synced to cloud." });
-    else if (!user) toast({ title: "Not signed in", description: "Sign in to sync settings across browsers.", variant: "destructive" });
+    if (ok) toast({ title: "Bridge settings saved", description: "Connection settings saved to configured database." });
   };
 
   const testOktaIntegration = async () => {
@@ -285,16 +304,6 @@ export default function SettingsPage({ user }: { user: User | null }) {
     }
   };
 
-  // API Tokens — stored in DB as JSONB
-  const [tokens, setTokens] = useState<ApiToken[]>([]);
-  const [showCreateToken, setShowCreateToken] = useState(false);
-  const [newTokenName, setNewTokenName] = useState("");
-  const [newTokenExpiry, setNewTokenExpiry] = useState("90");
-  const [newTokenScopes, setNewTokenScopes] = useState<string[]>(["dns:read"]);
-  const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
-  const [copiedToken, setCopiedToken] = useState<string | null>(null);
-  const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null);
-
   const toggleScope = (scope: string) => {
     setNewTokenScopes((prev) =>
       prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
@@ -303,7 +312,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
 
   const persistTokens = async (updated: ApiToken[]) => {
     setTokens(updated);
-    await saveSettings({ api_tokens: updated as unknown as import("@/integrations/supabase/types").Json });
+    await saveSettings({ api_tokens: updated });
   };
 
   const createToken = async () => {
@@ -326,12 +335,12 @@ export default function SettingsPage({ user }: { user: User | null }) {
     setNewTokenExpiry("90");
     setShowCreateToken(false);
     setTimeout(() => setJustCreatedToken(null), 10000);
-    toast({ title: "Token created", description: "API token saved to cloud." });
+    toast({ title: "Token created", description: "API token saved to configured database." });
   };
 
   const revokeToken = async (id: string) => {
     await persistTokens(tokens.filter((t) => t.id !== id));
-    toast({ title: "Token revoked", description: "API token removed from cloud." });
+    toast({ title: "Token revoked", description: "API token removed from configured database." });
   };
 
   const copyToken = (id: string, token: string) => {
@@ -352,18 +361,6 @@ export default function SettingsPage({ user }: { user: User | null }) {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {/* ── Not signed in warning ─────────────────────────────────────── */}
-      {!user && (
-        <div className="flex items-start gap-3 p-4 rounded-lg bg-warning/10 border border-warning/30 text-warning">
-          <LogIn className="h-4 w-4 mt-0.5 shrink-0" />
-          <div className="text-xs leading-relaxed">
-            <span className="font-semibold block mb-0.5">Not signed in — settings won't be saved to the cloud.</span>
-            Bridge URL and API key are stored locally in this browser only. All other settings (database, Okta, logs, notifications) require you to{" "}
-            <a href="/settings" className="underline font-medium" onClick={(e) => { e.preventDefault(); window.location.hash = ""; }}>sign in</a>{" "}
-            so they persist across sessions and devices. Use the account icon in the top right to sign in.
-          </div>
-        </div>
-      )}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
         <div className="flex items-center gap-2 mb-1">
           <Server className="h-4 w-4 text-primary" />
@@ -730,7 +727,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
             <button
               onClick={async () => {
                 const ok = await saveSettings({ log_retention: logRetention, log_rotation: logRotation, log_max_size: maxLogSize });
-                if (ok) toast({ title: "Log settings saved", description: "Query logging configuration synced to cloud." });
+                if (ok) toast({ title: "Log settings saved", description: "Query logging configuration saved to configured database." });
               }}
               className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
             >
@@ -785,8 +782,8 @@ export default function SettingsPage({ user }: { user: User | null }) {
               // Always sync to localStorage so bridge calls use this immediately
               setDbConfig(cfg);
               const ok = await saveSettings(cfg);
-              if (ok) toast({ title: "Database config saved", description: "Database configuration synced to cloud and applied to bridge." });
-              else toast({ title: "Saved locally", description: "DB config applied to this session. Sign in to sync to cloud.", variant: "default" });
+              if (ok) toast({ title: "Database config saved", description: "Database configuration saved and applied to bridge." });
+              else toast({ title: "Save failed", description: "Could not reach the bridge to save DB config.", variant: "destructive" });
             }}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
           >
@@ -1012,16 +1009,6 @@ export default function SettingsPage({ user }: { user: User | null }) {
           It does not include API tokens (those are session-only).
         </p>
       </motion.div>
-
-      {/* Save */}
-      <div className="flex justify-end gap-3">
-        <button className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm text-muted-foreground hover:text-foreground transition-colors">
-          <RotateCcw className="h-4 w-4" /> Reset
-        </button>
-        <button className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
-          <Save className="h-4 w-4" /> Save Changes
-        </button>
-      </div>
     </div>
   );
 }

@@ -219,6 +219,46 @@ export async function fetchPingResults(): Promise<PingServerResult[]> {
   return await res.json();
 }
 
+export interface AppSettings {
+  bridge_url?: string | null;
+  bridge_api_key?: string | null;
+  okta_domain?: string | null;
+  okta_client_id?: string | null;
+  okta_client_secret?: string | null;
+  okta_enabled?: boolean;
+  api_tokens?: unknown;
+  log_retention?: string;
+  log_rotation?: string;
+  log_max_size?: string;
+  notify_blocked?: boolean;
+  notify_service?: boolean;
+  db_type?: string;
+  db_host?: string | null;
+  db_port?: string | null;
+  db_name?: string | null;
+  db_user?: string | null;
+  db_password?: string | null;
+}
+
+/** Fetch all app settings from the bridge (GET /settings). */
+export async function fetchBridgeSettings(): Promise<AppSettings> {
+  const res = await authFetch(`${baseUrl()}/settings`, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`Bridge /settings returned ${res.status}`);
+  return await res.json();
+}
+
+/** Save app settings to the bridge (POST /settings). */
+export async function saveBridgeSettings(settings: AppSettings): Promise<{ ok: boolean }> {
+  const res = await authFetch(`${baseUrl()}/settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`Bridge /settings returned ${res.status}`);
+  return await res.json();
+}
+
 export interface DnsQueryResult {
   domain: string;
   type: string;
