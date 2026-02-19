@@ -6,6 +6,9 @@ import {
   Activity, ChevronLeft, ChevronRight, Globe, LogOut, Sun, Moon, Monitor,
 } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
+import { supabase } from "@/integrations/supabase/client";
+import { User } from "@supabase/supabase-js";
+import { toast } from "@/hooks/use-toast";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -17,7 +20,7 @@ const navItems = [
   { path: "/settings", icon: Settings, label: "Settings" },
 ];
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default function AppLayout({ children, user }: { children: React.ReactNode; user: User | null }) {
   const [collapsed, setCollapsed] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const location = useLocation();
@@ -146,12 +149,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <div className="w-2 h-2 rounded-full bg-success animate-pulse-glow" />
               <span className="text-xs font-mono text-success">ONLINE</span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
-                AD
+            {user ? (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
+                    {user.email?.charAt(0).toUpperCase() ?? "U"}
+                  </div>
+                  <span className="hidden md:inline text-xs truncate max-w-[140px]">{user.email}</span>
+                </div>
+                <button
+                  onClick={async () => { await supabase.auth.signOut(); toast({ title: "Signed out" }); }}
+                  className="p-2 text-muted-foreground hover:text-destructive transition-colors"
+                  title="Sign out"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
               </div>
-              <span className="hidden md:inline">Admin</span>
-            </div>
+            ) : (
+              <Link
+                to="/auth"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90 transition-colors"
+              >
+                Sign In
+              </Link>
+            )}
           </div>
         </header>
 
