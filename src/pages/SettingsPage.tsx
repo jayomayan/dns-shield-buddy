@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, HardDrive, Wifi } from "lucide-react";
+import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, HardDrive, Wifi, LogIn, ExternalLink } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBridgeUrl, getBridgeHeaders, setDbConfig, getBridgeUrl } from "@/hooks/use-bridge-url";
-import { saveOktaConfig } from "@/hooks/use-okta-session";
+import { saveOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
 import { User } from "@supabase/supabase-js";
 import { fetchBridgeSettings, saveBridgeSettings, type AppSettings } from "@/lib/unbound-bridge";
 
@@ -276,31 +276,129 @@ export default function SettingsPage({ user }: { user: User | null }) {
     if (ok) toast({ title: "Bridge settings saved", description: "Connection settings saved to configured database." });
   };
 
+  interface OktaCheckStep {
+    label: string;
+    status: "pending" | "checking" | "ok" | "fail" | "warn";
+    detail: string | null;
+  }
+
+  const [oktaCheckSteps, setOktaCheckSteps] = useState<OktaCheckStep[] | null>(null);
+
+  const updateStep = (steps: OktaCheckStep[], idx: number, patch: Partial<OktaCheckStep>) => {
+    const next = [...steps];
+    next[idx] = { ...next[idx], ...patch };
+    setOktaCheckSteps([...next]);
+    return next;
+  };
+
   const testOktaIntegration = async () => {
-    const domain = oktaDomain.trim();
+    const domain    = oktaDomain.trim().replace(/\/$/, "");
+    const clientId  = oktaClientId.trim();
+
     if (!domain) {
       toast({ title: "Missing Okta Domain", description: "Enter your Okta domain before testing.", variant: "destructive" });
       return;
     }
+
+    const steps: OktaCheckStep[] = [
+      { label: "Domain format",        status: "pending", detail: null },
+      { label: "Client ID format",     status: "pending", detail: null },
+      { label: "OIDC discovery",       status: "pending", detail: null },
+      { label: "Authorization endpoint", status: "pending", detail: null },
+      { label: "Token endpoint",       status: "pending", detail: null },
+    ];
+    setOktaCheckSteps([...steps]);
     setOktaTesting(true);
     setOktaTestResult(null);
+
+    // Step 0 — Domain format
+    let s = updateStep(steps, 0, { status: "checking" });
+    const domainRe = /^https:\/\/[a-zA-Z0-9-]+\.(okta\.com|okta\.eu|oktapreview\.com|okta-emea\.com)(\/oauth2\/[\w-]+)?$/;
+    if (domainRe.test(domain)) {
+      s = updateStep(s, 0, { status: "ok", detail: domain });
+    } else if (domain.startsWith("http://")) {
+      s = updateStep(s, 0, { status: "fail", detail: "Must use https://" });
+    } else {
+      s = updateStep(s, 0, { status: "warn", detail: "Unusual domain — custom auth server?" });
+    }
+
+    // Step 1 — Client ID format
+    s = updateStep(s, 1, { status: "checking" });
+    const clientIdRe = /^[a-zA-Z0-9]{20}$/;
+    if (!clientId) {
+      s = updateStep(s, 1, { status: "warn", detail: "Client ID is empty — needed for login" });
+    } else if (clientIdRe.test(clientId)) {
+      s = updateStep(s, 1, { status: "ok", detail: clientId.slice(0, 6) + "••••••••••••••" });
+    } else {
+      s = updateStep(s, 1, { status: "warn", detail: "Unexpected format — Okta Client IDs are 20 alphanumeric chars" });
+    }
+
+    // Step 2 — OIDC discovery
+    s = updateStep(s, 2, { status: "checking" });
+    let oidcMeta: Record<string, string> = {};
     try {
-      const base = domain.replace(/\/$/, "");
-      const res = await fetch(`${base}/.well-known/openid-configuration`, {
-        signal: AbortSignal.timeout(6000),
-      });
+      const res = await fetch(`${domain}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(7000) });
       if (res.ok) {
-        const json = await res.json();
-        const issuer = json.issuer ?? domain;
-        setOktaTestResult({ ok: true, message: `Connected — issuer: ${issuer}` });
+        oidcMeta = await res.json();
+        s = updateStep(s, 2, { status: "ok", detail: `issuer: ${oidcMeta.issuer ?? domain}` });
       } else {
-        setOktaTestResult({ ok: false, message: `Okta responded with HTTP ${res.status}. Check your domain URL.` });
+        s = updateStep(s, 2, { status: "fail", detail: `HTTP ${res.status} — check domain or auth server path` });
+        // remaining checks can't run
+        s = updateStep(s, 3, { status: "fail", detail: "Skipped — discovery failed" });
+        s = updateStep(s, 4, { status: "fail", detail: "Skipped — discovery failed" });
+        setOktaTestResult({ ok: false, message: "OIDC discovery failed. Check your domain URL." });
+        setOktaTesting(false);
+        return;
       }
     } catch (e: unknown) {
-      const msg = e instanceof Error && e.name === "TimeoutError" ? "Request timed out — domain unreachable." : "Could not reach Okta domain. Check the URL and network access.";
+      const msg = e instanceof Error && e.name === "TimeoutError" ? "Timeout — domain unreachable" : "Unreachable — check domain or CORS";
+      s = updateStep(s, 2, { status: "fail", detail: msg });
+      s = updateStep(s, 3, { status: "fail", detail: "Skipped" });
+      s = updateStep(s, 4, { status: "fail", detail: "Skipped" });
       setOktaTestResult({ ok: false, message: msg });
-    } finally {
       setOktaTesting(false);
+      return;
+    }
+
+    // Step 3 — Authorization endpoint present
+    s = updateStep(s, 3, { status: "checking" });
+    if (oidcMeta.authorization_endpoint) {
+      s = updateStep(s, 3, { status: "ok", detail: oidcMeta.authorization_endpoint });
+    } else {
+      s = updateStep(s, 3, { status: "fail", detail: "authorization_endpoint missing from metadata" });
+    }
+
+    // Step 4 — Token endpoint present
+    s = updateStep(s, 4, { status: "checking" });
+    if (oidcMeta.token_endpoint) {
+      s = updateStep(s, 4, { status: "ok", detail: oidcMeta.token_endpoint });
+    } else {
+      s = updateStep(s, 4, { status: "fail", detail: "token_endpoint missing from metadata" });
+    }
+
+    const allOk = s.every((st) => st.status === "ok" || st.status === "warn");
+    setOktaTestResult({
+      ok: allOk,
+      message: allOk
+        ? "Okta domain is reachable and OIDC is configured correctly."
+        : "Some checks failed — review the details above.",
+    });
+    setOktaTesting(false);
+  };
+
+  const testOktaLogin = async () => {
+    const domain   = oktaDomain.trim();
+    const clientId = oktaClientId.trim();
+    if (!domain || !clientId) {
+      toast({ title: "Missing fields", description: "Enter Okta Domain and Client ID before testing login.", variant: "destructive" });
+      return;
+    }
+    // Temporarily persist config so startOktaLogin can read it
+    saveOktaConfig({ domain, clientId, enabled: false });
+    try {
+      await startOktaLogin({ domain, clientId, enabled: false });
+    } catch (e: unknown) {
+      toast({ title: "Login test failed", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
     }
   };
 
@@ -525,34 +623,85 @@ export default function SettingsPage({ user }: { user: User | null }) {
               <input type="password" value={oktaSecret} onChange={(e) => setOktaSecret(e.target.value)} placeholder="••••••••" className={inputClass} />
             </div>
           </div>
-          {/* Test button + result */}
-          <div className="flex items-center gap-2">
+          {/* Test buttons + results */}
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={testOktaIntegration}
               disabled={oktaTesting}
               className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
             >
               {oktaTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-              {oktaTesting ? "Testing…" : "Test Okta Integration"}
+              {oktaTesting ? "Checking…" : "Verify Connection"}
             </button>
+            <button
+              onClick={testOktaLogin}
+              disabled={oktaTesting}
+              className="flex items-center gap-1.5 px-3 py-2 border border-primary/30 bg-primary/5 text-primary rounded-lg text-xs font-medium hover:bg-primary/10 transition-colors disabled:opacity-50"
+            >
+              <LogIn className="h-3.5 w-3.5" />
+              Test Login
+            </button>
+            <span className="text-[11px] text-muted-foreground">
+              "Test Login" will redirect you to Okta and back — save your settings first.
+            </span>
           </div>
 
+          {/* Step-by-step check results */}
           <AnimatePresence>
-            {oktaTestResult && (
+            {oktaCheckSteps && (
               <motion.div
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                className={`flex items-start gap-2 p-3 rounded-lg border text-xs ${
-                  oktaTestResult.ok
-                    ? "bg-success/5 border-success/20 text-success"
-                    : "bg-destructive/5 border-destructive/20 text-destructive"
-                }`}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
               >
-                {oktaTestResult.ok
-                  ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                  : <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />}
-                <span>{oktaTestResult.message}</span>
+                <div className="border border-border rounded-lg divide-y divide-border">
+                  {oktaCheckSteps.map((step, i) => (
+                    <div key={i} className="flex items-center justify-between px-4 py-2.5 text-xs">
+                      <div className="flex items-center gap-2.5">
+                        {step.status === "checking" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
+                        {step.status === "ok"       && <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />}
+                        {step.status === "warn"     && <AlertTriangle className="h-3.5 w-3.5 text-warning shrink-0" />}
+                        {step.status === "fail"     && <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />}
+                        {step.status === "pending"  && <div className="h-3.5 w-3.5 rounded-full border border-border shrink-0" />}
+                        <span className="font-medium">{step.label}</span>
+                      </div>
+                      {step.detail && (
+                        <span className={`font-mono text-[10px] truncate max-w-[280px] ${
+                          step.status === "ok"   ? "text-success" :
+                          step.status === "warn" ? "text-warning" :
+                          step.status === "fail" ? "text-destructive" :
+                          "text-muted-foreground"
+                        }`}>
+                          {step.detail}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {oktaTestResult && !oktaTesting && (
+                  <div className={`flex items-center gap-2 mt-3 p-3 rounded-lg border text-xs ${
+                    oktaTestResult.ok
+                      ? "bg-success/5 border-success/20 text-success"
+                      : "bg-destructive/5 border-destructive/20 text-destructive"
+                  }`}>
+                    {oktaTestResult.ok
+                      ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                      : <XCircle className="h-3.5 w-3.5 shrink-0" />}
+                    <span>{oktaTestResult.message}</span>
+                    {oktaTestResult.ok && (
+                      <a
+                        href={`${oktaDomain.trim()}/.well-known/openid-configuration`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                      >
+                        <ExternalLink className="h-3 w-3" /> OIDC metadata
+                      </a>
+                    )}
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
