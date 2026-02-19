@@ -86,36 +86,33 @@ function generateCodeVerifier(): string {
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 export async function startOktaLogin(config: OktaConfig): Promise<void> {
-  const stateArr = new Uint8Array(16);
+  // Always use PKCE — Okta requires it for all browser-based flows,
+  // even when a client_secret is also configured.
+  const codeVerifier  = generateCodeVerifier();
+  const codeChallenge = base64urlEncode(await sha256(codeVerifier));
+  const stateArr      = new Uint8Array(16);
   window.crypto.getRandomValues(stateArr);
-  const state = base64urlEncode(stateArr.buffer);
+  const state         = base64urlEncode(stateArr.buffer);
+
+  localStorage.setItem(OKTA_PKCE_KEY, JSON.stringify({ codeVerifier, state, expiresAt: Date.now() + PKCE_TTL_MS }));
 
   const domain      = config.domain.replace(/\/$/, "");
   const redirectUri = `${window.location.origin}/auth/callback`;
-  const usesPkce    = !config.clientSecret; // PKCE only for public/SPA clients
 
-  const params: Record<string, string> = {
-    client_id:     config.clientId,
-    response_type: "code",
-    scope:         "openid profile email",
-    redirect_uri:  redirectUri,
+  const params = new URLSearchParams({
+    client_id:             config.clientId,
+    response_type:         "code",
+    scope:                 "openid profile email",
+    redirect_uri:          redirectUri,
     state,
-    nonce:         state,
-  };
+    nonce:                 state,
+    code_challenge:        codeChallenge,
+    code_challenge_method: "S256",
+  });
 
-  if (usesPkce) {
-    const codeVerifier  = generateCodeVerifier();
-    const codeChallenge = base64urlEncode(await sha256(codeVerifier));
-    localStorage.setItem(OKTA_PKCE_KEY, JSON.stringify({ codeVerifier, state, expiresAt: Date.now() + PKCE_TTL_MS }));
-    params.code_challenge        = codeChallenge;
-    params.code_challenge_method = "S256";
-  } else {
-    // Confidential client — store state only (no PKCE verifier needed)
-    localStorage.setItem(OKTA_PKCE_KEY, JSON.stringify({ codeVerifier: null, state, expiresAt: Date.now() + PKCE_TTL_MS }));
-  }
-
-  window.location.href = `${domain}/oauth2/v1/authorize?${new URLSearchParams(params)}`;
+  window.location.href = `${domain}/oauth2/v1/authorize?${params}`;
 }
+
 
 
 // ─── Callback / token exchange ────────────────────────────────────────────────
@@ -128,7 +125,7 @@ export async function handleOktaCallback(
   const pkceRaw = localStorage.getItem(OKTA_PKCE_KEY);
   console.log("[Okta] pkceRaw from localStorage:", pkceRaw);
   if (!pkceRaw) throw new Error("No session data found — please try signing in again.");
-  const { codeVerifier, state: savedState, expiresAt } = JSON.parse(pkceRaw) as { codeVerifier: string | null; state: string; expiresAt: number };
+  const { codeVerifier, state: savedState, expiresAt } = JSON.parse(pkceRaw) as { codeVerifier: string; state: string; expiresAt: number };
   localStorage.removeItem(OKTA_PKCE_KEY);
   console.log("[Okta] codeVerifier present:", !!codeVerifier, "| state match:", state === savedState);
   if (expiresAt && Date.now() > expiresAt) throw new Error("Login session expired — please try signing in again.");
@@ -137,23 +134,23 @@ export async function handleOktaCallback(
   const domain      = config.domain.replace(/\/$/, "");
   const redirectUri = `${window.location.origin}/auth/callback`;
 
+  // Always send code_verifier — Okta requires PKCE for all browser-based flows
   const tokenBody: Record<string, string> = {
-    grant_type:   "authorization_code",
+    grant_type:    "authorization_code",
     code,
-    redirect_uri: redirectUri,
+    redirect_uri:  redirectUri,
+    code_verifier: codeVerifier,
   };
-
-  if (codeVerifier) {
-    tokenBody.code_verifier = codeVerifier;
-  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
   };
 
   if (config.clientSecret) {
+    // Confidential client: Basic Auth + PKCE (both required simultaneously by Okta)
     headers["Authorization"] = `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`;
   } else {
+    // Public SPA client: client_id in body
     tokenBody.client_id = config.clientId;
   }
 
@@ -175,6 +172,7 @@ export async function handleOktaCallback(
     console.error("[Okta] Token error response:", err);
     throw new Error(err.error_description || `Token exchange failed (HTTP ${tokenRes.status})`);
   }
+
 
 
   const tokens = await tokenRes.json() as {
