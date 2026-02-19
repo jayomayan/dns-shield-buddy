@@ -1,13 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useUserSettings } from "@/hooks/use-user-settings";
 import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, HardDrive, Wifi, LogIn, ExternalLink } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { useBridgeUrl, getBridgeHeaders, setDbConfig, getBridgeUrl } from "@/hooks/use-bridge-url";
+import { useBridgeUrl, getBridgeHeaders, setDbConfig } from "@/hooks/use-bridge-url";
 import { saveOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
 import { setLocalAdminEnabled as persistLocalAdminEnabled, hashPassword, setAdminPasswordHash, getAdminPasswordHash } from "@/hooks/use-local-admin";
 import { User } from "@supabase/supabase-js";
-import { fetchBridgeSettings, saveBridgeSettings, type AppSettings } from "@/lib/unbound-bridge";
 
 interface EndpointResult {
   path: string;
@@ -70,7 +69,7 @@ function generateToken(): string {
 }
 
 export default function SettingsPage({ user }: { user: User | null }) {
-  const { saveSettings: saveToDb, settings: dbSettings } = useUserSettings(user);
+  const { saveSettings: saveToDb, settings: dbSettings, loading: dbLoading } = useUserSettings(user);
   const { url: bridgeUrl, setUrl: setBridgeUrlState, apiKey: bridgeApiKey, setApiKey: setBridgeApiKeyState } = useBridgeUrl();
   const [bridgeInput, setBridgeInput] = useState(bridgeUrl);
   const [apiKeyInput, setApiKeyInput] = useState(bridgeApiKey);
@@ -79,7 +78,6 @@ export default function SettingsPage({ user }: { user: User | null }) {
   const [isTesting, setIsTesting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
-  const [settingsLoading, setSettingsLoading] = useState(false);
 
   // Database config state
   const [dbType, setDbType] = useState("local");
@@ -142,7 +140,6 @@ export default function SettingsPage({ user }: { user: User | null }) {
     }
   };
 
-
   // Log + notification state
   const [logRetention, setLogRetention] = useState("30");
   const [logRotation, setLogRotation] = useState("daily");
@@ -160,86 +157,46 @@ export default function SettingsPage({ user }: { user: User | null }) {
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null);
 
-  /** Save a partial settings object to the bridge's configured DB. */
-  const saveSettings = useCallback(async (updates: Partial<AppSettings>): Promise<boolean> => {
-    try {
-      await saveBridgeSettings(updates);
-      return true;
-    } catch (e) {
-      console.error("Failed to save settings via bridge:", e);
-      toast({ title: "Save failed", description: "Could not reach the bridge. Check the bridge URL and try again.", variant: "destructive" });
-      return false;
-    }
-  }, []);
-
-  /** Load all settings from the bridge's configured DB on mount. */
-  const loadSettings = useCallback(async () => {
-    const url = getBridgeUrl();
-    if (!url) return;
-    setSettingsLoading(true);
-    try {
-      const data = await fetchBridgeSettings();
-      if (data.okta_domain !== undefined) setOktaDomain(data.okta_domain || "");
-      if (data.okta_client_id !== undefined) setOktaClientId(data.okta_client_id || "");
-      if (data.okta_client_secret !== undefined) setOktaSecret(data.okta_client_secret || "");
-      if (data.okta_enabled !== undefined) {
-        setOktaEnabled(data.okta_enabled);
-        saveOktaConfig({
-          domain:       data.okta_domain || "",
-          clientId:     data.okta_client_id || "",
-          clientSecret: data.okta_client_secret || undefined,
-          enabled:      data.okta_enabled,
-        });
-      }
-      if (data.log_retention) setLogRetention(data.log_retention);
-      if (data.log_rotation) setLogRotation(data.log_rotation);
-      if (data.log_max_size) setMaxLogSize(data.log_max_size);
-      if (data.notify_blocked !== undefined) setNotifyBlocked(data.notify_blocked);
-      if (data.notify_service !== undefined) setNotifyService(data.notify_service);
-      const loadedDbType = data.db_type || "local";
-      const loadedDbHost = data.db_host || "";
-      const loadedDbPort = data.db_port || "5432";
-      const loadedDbName = data.db_name || "";
-      const loadedDbUser = data.db_user || "";
-      const loadedDbPassword = data.db_password || "";
-      setDbType(loadedDbType);
-      setDbHost(loadedDbHost);
-      setDbPort(loadedDbPort);
-      setDbName(loadedDbName);
-      setDbUser(loadedDbUser);
-      setDbPassword(loadedDbPassword);
-      setDbConfig({ db_type: loadedDbType, db_host: loadedDbHost || null, db_port: loadedDbPort || null, db_name: loadedDbName || null, db_user: loadedDbUser || null, db_password: loadedDbPassword || null });
-      if (data.bridge_url) { setBridgeUrlState(data.bridge_url); setBridgeInput(data.bridge_url); }
-      if (data.bridge_api_key) { setBridgeApiKeyState(data.bridge_api_key); setApiKeyInput(data.bridge_api_key); }
-      if (data.api_tokens) {
-        try { setTokens(data.api_tokens as ApiToken[]); } catch { /* ignore */ }
-      }
-    } catch {
-      // Bridge not reachable yet — settings remain at defaults from localStorage
-    } finally {
-      setSettingsLoading(false);
-    }
-  }, [setBridgeUrlState, setBridgeApiKeyState]);
-
-  // Load Okta settings from DB when they arrive
+  // ── Load all settings from DB when dbSettings arrives ──────────────────────
   useEffect(() => {
-    if (dbSettings.okta_domain) setOktaDomain(dbSettings.okta_domain);
-    if (dbSettings.okta_client_id) setOktaClientId(dbSettings.okta_client_id);
-    if (dbSettings.okta_client_secret) setOktaSecret(dbSettings.okta_client_secret);
-    if (dbSettings.okta_enabled !== undefined) {
-      setOktaEnabled(dbSettings.okta_enabled);
-      if (dbSettings.okta_domain && dbSettings.okta_client_id) {
-        saveOktaConfig({
-          domain:       dbSettings.okta_domain,
-          clientId:     dbSettings.okta_client_id,
-          clientSecret: dbSettings.okta_client_secret || undefined,
-          enabled:      dbSettings.okta_enabled,
-        });
-      }
-    }
-  }, [dbSettings]);
+    if (dbLoading) return;
 
-  useEffect(() => { loadSettings(); }, [loadSettings]);
+    if (dbSettings.okta_domain)        setOktaDomain(dbSettings.okta_domain);
+    if (dbSettings.okta_client_id)     setOktaClientId(dbSettings.okta_client_id);
+    if (dbSettings.okta_client_secret) setOktaSecret(dbSettings.okta_client_secret);
+    setOktaEnabled(dbSettings.okta_enabled);
+    if (dbSettings.okta_domain && dbSettings.okta_client_id) {
+      saveOktaConfig({
+        domain:       dbSettings.okta_domain,
+        clientId:     dbSettings.okta_client_id,
+        clientSecret: dbSettings.okta_client_secret || undefined,
+        enabled:      dbSettings.okta_enabled,
+      });
+    }
+
+    if (dbSettings.log_retention) setLogRetention(dbSettings.log_retention);
+    if (dbSettings.log_rotation)  setLogRotation(dbSettings.log_rotation);
+    if (dbSettings.log_max_size)  setMaxLogSize(dbSettings.log_max_size);
+    setNotifyBlocked(dbSettings.notify_blocked);
+    setNotifyService(dbSettings.notify_service);
+
+    const t = dbSettings.db_type || "local";
+    const h = dbSettings.db_host || "";
+    const p = dbSettings.db_port || "5432";
+    const n = dbSettings.db_name || "";
+    const u = dbSettings.db_user || "";
+    const pw = dbSettings.db_password || "";
+    setDbType(t); setDbHost(h); setDbPort(p); setDbName(n); setDbUser(u); setDbPassword(pw);
+    setDbConfig({ db_type: t, db_host: h || null, db_port: p || null, db_name: n || null, db_user: u || null, db_password: pw || null });
+
+    if (dbSettings.bridge_url)     { setBridgeUrlState(dbSettings.bridge_url);    setBridgeInput(dbSettings.bridge_url); }
+    if (dbSettings.bridge_api_key) { setBridgeApiKeyState(dbSettings.bridge_api_key); setApiKeyInput(dbSettings.bridge_api_key); }
+    if (dbSettings.api_tokens) {
+      try { setTokens(dbSettings.api_tokens as unknown as ApiToken[]); } catch { /* ignore */ }
+    }
+  }, [dbSettings, dbLoading, setBridgeUrlState, setBridgeApiKeyState]);
+
+
 
   const exportConfig = () => {
     const config: Record<string, unknown> = {
@@ -301,7 +258,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
         if (parsed.db_name !== undefined) setDbName(parsed.db_name || "");
         if (parsed.db_user !== undefined) setDbUser(parsed.db_user || "");
         if (parsed.db_password !== undefined) setDbPassword(parsed.db_password || "");
-        await saveSettings({
+        await saveToDb({
           bridge_url: newUrl || null,
           bridge_api_key: newKey || null,
           okta_domain: parsed.okta_domain || null,
@@ -321,7 +278,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
           db_user: parsed.db_user || null,
           db_password: parsed.db_password || null,
         });
-        toast({ title: "Config imported", description: "Settings restored and saved to configured database." });
+        toast({ title: "Config imported", description: "Settings restored and saved to database." });
       } catch {
         setImportError("Invalid config file — make sure you're using a file exported from DNS Shield.");
       }
@@ -341,8 +298,8 @@ export default function SettingsPage({ user }: { user: User | null }) {
   const saveBridgeUrl = async () => {
     setBridgeUrlState(bridgeInput);
     setBridgeApiKeyState(apiKeyInput);
-    const ok = await saveSettings({ bridge_url: bridgeInput || null, bridge_api_key: apiKeyInput || null });
-    if (ok) toast({ title: "Bridge settings saved", description: "Connection settings saved to configured database." });
+    const ok = await saveToDb({ bridge_url: bridgeInput || null, bridge_api_key: apiKeyInput || null });
+    if (ok) toast({ title: "Bridge settings saved", description: "Connection settings saved to database." });
   };
 
   interface OktaCheckStep {
@@ -479,7 +436,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
 
   const persistTokens = async (updated: ApiToken[]) => {
     setTokens(updated);
-    await saveSettings({ api_tokens: updated });
+    await saveToDb({ api_tokens: updated as unknown as import("@/integrations/supabase/types").Json });
   };
 
   const createToken = async () => {
@@ -668,11 +625,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
                 okta_client_secret: oktaSecret.trim() || null,
                 okta_enabled: true,
               };
-              // Save to both bridge (local) and Lovable Cloud DB
-              await Promise.all([
-                saveSettings(oktaUpdate),
-                saveToDb(oktaUpdate),
-              ]);
+              await saveToDb(oktaUpdate);
               toast({ title: "Okta SSO saved", description: "Configuration saved to database. SSO is now active." });
             }}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
