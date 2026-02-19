@@ -32,6 +32,7 @@ import {
   verifyLocalAdminCredentials,
   type LocalAdminSession,
 } from "@/hooks/use-local-admin";
+
 import { Globe, Loader2, LogIn, Shield, Eye, EyeOff, Lock } from "lucide-react";
 
 
@@ -139,6 +140,7 @@ function LocalAdminGate({ children }: { children: React.ReactNode }) {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw]     = useState(false);
   const [error, setError]       = useState<string | null>(null);
+  const [loggingIn, setLoggingIn] = useState(false);
 
   const signOut = () => { clearLocalAdminSession(); setSession(null); };
 
@@ -158,14 +160,20 @@ function LocalAdminGate({ children }: { children: React.ReactNode }) {
   }
 
   // Show local admin login wall
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (verifyLocalAdminCredentials(username, password)) {
-      storeLocalAdminSession();
-      setSession(getLocalAdminSession());
-    } else {
-      setError("Invalid username or password.");
+    setLoggingIn(true);
+    try {
+      const valid = await verifyLocalAdminCredentials(username, password);
+      if (valid) {
+        storeLocalAdminSession();
+        setSession(getLocalAdminSession());
+      } else {
+        setError("Invalid username or password.");
+      }
+    } finally {
+      setLoggingIn(false);
     }
   };
 
@@ -232,9 +240,11 @@ function LocalAdminGate({ children }: { children: React.ReactNode }) {
 
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+            disabled={loggingIn}
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
           >
-            <LogIn className="h-4 w-4" /> Sign in
+            {loggingIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+            {loggingIn ? "Verifying…" : "Sign in"}
           </button>
 
           <p className="text-[10px] text-muted-foreground text-center">

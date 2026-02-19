@@ -57,6 +57,40 @@ export function clearLocalAdminSession(): void {
 
 // ─── Credentials ──────────────────────────────────────────────────────────────
 
-export function verifyLocalAdminCredentials(username: string, password: string): boolean {
-  return username === "admin" && password === "admin";
+const ADMIN_PASSWORD_HASH_KEY = "local_admin_password_hash";
+
+/** SHA-256 hash (hex) of the default password "admin" */
+const DEFAULT_PASSWORD_HASH = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918";
+
+/** Hash a plaintext password using SHA-256 via Web Crypto API */
+export async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+/** Return the stored hash, or the default "admin" hash if never set */
+export function getAdminPasswordHash(): string {
+  try {
+    return localStorage.getItem(ADMIN_PASSWORD_HASH_KEY) || DEFAULT_PASSWORD_HASH;
+  } catch {
+    return DEFAULT_PASSWORD_HASH;
+  }
+}
+
+/** Persist a new password hash */
+export function setAdminPasswordHash(hash: string): void {
+  try {
+    localStorage.setItem(ADMIN_PASSWORD_HASH_KEY, hash);
+  } catch {}
+}
+
+/** Verify credentials asynchronously against the stored hash */
+export async function verifyLocalAdminCredentials(username: string, password: string): Promise<boolean> {
+  if (username !== "admin") return false;
+  const hash = await hashPassword(password);
+  return hash === getAdminPasswordHash();
+}
+
