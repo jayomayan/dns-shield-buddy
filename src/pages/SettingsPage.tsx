@@ -759,10 +759,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
                 onClick={async () => {
                   setOktaEnabled(false);
                   saveOktaConfig({ domain: oktaDomain, clientId: oktaClientId, clientSecret: oktaSecret || undefined, enabled: false });
-                  await Promise.all([
-                    saveSettings({ okta_enabled: false }),
-                    saveToDb({ okta_enabled: false }),
-                  ]);
+                  await saveToDb({ okta_enabled: false });
                   toast({ title: "Okta disabled", description: "SSO has been disabled." });
                 }}
                 className="text-[11px] text-muted-foreground hover:text-destructive transition-colors ml-4 shrink-0"
@@ -1075,8 +1072,8 @@ export default function SettingsPage({ user }: { user: User | null }) {
           <div className="flex justify-end">
             <button
               onClick={async () => {
-                const ok = await saveSettings({ log_retention: logRetention, log_rotation: logRotation, log_max_size: maxLogSize });
-                if (ok) toast({ title: "Log settings saved", description: "Query logging configuration saved to configured database." });
+                const ok = await saveToDb({ log_retention: logRetention, log_rotation: logRotation, log_max_size: maxLogSize });
+                if (ok) toast({ title: "Log settings saved", description: "Logging configuration saved to database." });
               }}
               className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
             >
@@ -1095,8 +1092,8 @@ export default function SettingsPage({ user }: { user: User | null }) {
         <p className="text-xs text-muted-foreground mb-6">Alert preferences for DNS events.</p>
         <div className="space-y-3">
           {[
-            { label: "High blocked query volume alerts", key: "notify_blocked", checked: notifyBlocked, onChange: async (v: boolean) => { setNotifyBlocked(v); await saveSettings({ notify_blocked: v }); } },
-            { label: "Service status change alerts", key: "notify_service", checked: notifyService, onChange: async (v: boolean) => { setNotifyService(v); await saveSettings({ notify_service: v }); } },
+            { label: "High blocked query volume alerts", key: "notify_blocked", checked: notifyBlocked, onChange: async (v: boolean) => { setNotifyBlocked(v); await saveToDb({ notify_blocked: v }); } },
+            { label: "Service status change alerts", key: "notify_service", checked: notifyService, onChange: async (v: boolean) => { setNotifyService(v); await saveToDb({ notify_service: v }); } },
           ].map((item) => (
             <label key={item.key} className="flex items-center justify-between cursor-pointer group">
               <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">{item.label}</span>
@@ -1128,11 +1125,10 @@ export default function SettingsPage({ user }: { user: User | null }) {
                 db_user: dbType === "remote" ? dbUser || null : null,
                 db_password: dbType === "remote" ? dbPassword || null : null,
               };
-              // Always sync to localStorage so bridge calls use this immediately
               setDbConfig(cfg);
-              const ok = await saveSettings(cfg);
-              if (ok) toast({ title: "Database config saved", description: "Database configuration saved and applied to bridge." });
-              else toast({ title: "Save failed", description: "Could not reach the bridge to save DB config.", variant: "destructive" });
+              const ok = await saveToDb(cfg);
+              if (ok) toast({ title: "Bridge DB config saved", description: "Saved to database. This tells the bridge which SQLite/PostgreSQL to use on your GCP VM." });
+              else toast({ title: "Save failed", description: "Could not save to database.", variant: "destructive" });
             }}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
           >
