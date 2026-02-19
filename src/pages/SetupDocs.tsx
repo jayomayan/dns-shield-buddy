@@ -1428,6 +1428,23 @@ export default function SetupDocs() {
                   Requires Unbound logging enabled: set <code className="font-mono">log-queries: yes</code> and <code className="font-mono">logfile: "/var/log/unbound/unbound.log"</code> in unbound.conf
                 </p>
               </div>
+              <div className="flex gap-2 mb-2">
+                <button
+                  onClick={() => {
+                    const blob = new Blob([BRIDGE_SCRIPT], { type: "text/javascript" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "unbound-bridge.js";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download unbound-bridge.js
+                </button>
+              </div>
               <div className="relative">
                 <button
                   onClick={() => copyCommand(BRIDGE_SCRIPT, "bridge-main")}
