@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info } from "lucide-react";
+import { Save, Key, RotateCcw, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useBridgeUrl } from "@/hooks/use-bridge-url";
+import { useBridgeUrl, getBridgeHeaders } from "@/hooks/use-bridge-url";
 
 interface EndpointResult {
   path: string;
@@ -27,7 +27,10 @@ async function testEndpoint(baseUrl: string, ep: typeof ENDPOINTS[0]): Promise<E
   try {
     const res = await fetch(`${baseUrl}${ep.path}`, {
       method: ep.method === "POST" ? "POST" : "GET",
-      headers: ep.method === "POST" ? { "Content-Type": "application/json" } : undefined,
+      headers: {
+        ...getBridgeHeaders(),
+        ...(ep.method === "POST" ? { "Content-Type": "application/json" } : {}),
+      },
       body: ep.method === "POST" ? JSON.stringify({}) : undefined,
       signal: AbortSignal.timeout(4000),
     });
@@ -61,8 +64,10 @@ function generateToken(): string {
 }
 
 export default function SettingsPage() {
-  const { url: bridgeUrl, setUrl: setBridgeUrlState } = useBridgeUrl();
+  const { url: bridgeUrl, setUrl: setBridgeUrlState, apiKey: bridgeApiKey, setApiKey: setBridgeApiKeyState } = useBridgeUrl();
   const [bridgeInput, setBridgeInput] = useState(bridgeUrl);
+  const [apiKeyInput, setApiKeyInput] = useState(bridgeApiKey);
+  const [showApiKey, setShowApiKey] = useState(false);
   const [endpointResults, setEndpointResults] = useState<EndpointResult[] | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
@@ -79,6 +84,7 @@ export default function SettingsPage() {
 
   const saveBridgeUrl = () => {
     setBridgeUrlState(bridgeInput);
+    setBridgeApiKeyState(apiKeyInput);
   };
 
   const [oktaDomain, setOktaDomain] = useState("");
@@ -179,7 +185,7 @@ export default function SettingsPage() {
           <strong>public IP</strong> with the <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/api</code> prefix
           (e.g. <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">http://1.2.3.4/api</code>). Use <em>localhost:8080</em> only when your browser is on the same machine as the bridge.
         </p>
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 mb-3">
           <input
             value={bridgeInput}
             onChange={(e) => setBridgeInput(e.target.value)}
@@ -202,7 +208,34 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        {/* Per-endpoint results */}
+        {/* Bridge API Key */}
+        <div className="mb-4">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+            <label className="text-xs font-medium text-muted-foreground">Bridge API Key</label>
+            {bridgeApiKey && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-success/10 text-success border border-success/20">Active</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type={showApiKey ? "text" : "password"}
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              placeholder="Leave blank for no authentication"
+              className={inputClass + " flex-1 font-mono"}
+            />
+            <button onClick={() => setShowApiKey((v) => !v)} className="p-2 text-muted-foreground hover:text-foreground transition-colors">
+              {showApiKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1.5">
+            Sent as <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">Authorization: Bearer &lt;key&gt;</code> on every bridge request.
+            Set the same key in <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">BRIDGE_API_KEY</code> env var on the server (see Setup Docs → Bridge Script).
+          </p>
+        </div>
+
+
         <AnimatePresence>
           {endpointResults && (
             <motion.div
