@@ -796,26 +796,51 @@ export default function SettingsPage({ user }: { user: User | null }) {
                       toast({ title: "Missing host", description: "Enter a database host before testing.", variant: "destructive" });
                       return;
                     }
+                    const base = bridgeInput.replace(/\/$/, "");
+                    if (!base) {
+                      toast({ title: "Bridge URL required", description: "Set the Unbound Bridge URL first — the connection test runs through the bridge.", variant: "destructive" });
+                      return;
+                    }
                     setDbTesting(true);
                     setDbTestResult(null);
-                    await new Promise((r) => setTimeout(r, 1200));
-                    setDbTestResult({ ok: false, message: "Direct DB connectivity tests run server-side. Save the config and verify via application logs." });
-                    setDbTesting(false);
+                    const start = Date.now();
+                    try {
+                      const res = await fetch(`${base}/db/ping`, {
+                        method: "POST",
+                        headers: { ...getBridgeHeaders(), "Content-Type": "application/json" },
+                        body: JSON.stringify({ host: dbHost, port: dbPort || "5432", database: dbName, user: dbUser, password: dbPassword }),
+                        signal: AbortSignal.timeout(8000),
+                      });
+                      const latency = Date.now() - start;
+                      if (res.ok) {
+                        setDbTestResult({ ok: true, message: `Connected successfully in ${latency}ms — PostgreSQL reachable at ${dbHost}:${dbPort || "5432"}.` });
+                      } else if (res.status === 404) {
+                        setDbTestResult({ ok: false, message: "Bridge endpoint /db/ping not found. Update your bridge script to v1.2+ to enable live DB testing." });
+                      } else {
+                        const body = await res.json().catch(() => ({}));
+                        setDbTestResult({ ok: false, message: body?.error ?? `Bridge returned HTTP ${res.status}. Check host, port, credentials, and network access.` });
+                      }
+                    } catch (e: unknown) {
+                      const isTimeout = e instanceof Error && e.name === "TimeoutError";
+                      setDbTestResult({ ok: false, message: isTimeout ? "Request timed out — bridge or database unreachable within 8s." : "Could not reach the bridge. Ensure the bridge URL is correct and the service is running." });
+                    } finally {
+                      setDbTesting(false);
+                    }
                   }}
                   disabled={dbTesting}
                   className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
                 >
                   {dbTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {dbTesting ? "Testing…" : "Test Connection"}
+                  {dbTesting ? "Testing…" : "Test Database"}
                 </button>
               </div>
               <AnimatePresence>
                 {dbTestResult && (
                   <motion.div
                     initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                    className="flex items-start gap-2 p-3 rounded-lg border bg-warning/5 border-warning/20 text-xs text-warning"
+                    className={`flex items-start gap-2 p-3 rounded-lg border text-xs ${dbTestResult.ok ? "bg-success/5 border-success/20 text-success" : "bg-destructive/5 border-destructive/20 text-destructive"}`}
                   >
-                    <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    {dbTestResult.ok ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" /> : <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />}
                     <span>{dbTestResult.message}</span>
                   </motion.div>
                 )}
