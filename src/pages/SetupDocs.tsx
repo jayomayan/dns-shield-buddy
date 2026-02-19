@@ -225,10 +225,10 @@ dig @<server-ip> google.com`,
 ];
 
 const BRIDGE_SCRIPT = `#!/usr/bin/env node
-// unbound-bridge.js — DNSGuard API Bridge v1.2
+// unbound-bridge.js — DNSGuard API Bridge v1.3
 // Place at: /opt/unbound-bridge/unbound-bridge.js
 // Run as root: sudo node unbound-bridge.js
-// v1.2 — adds POST /db/ping for local SQLite & remote PostgreSQL connectivity tests
+// v1.3 — adds GET /settings and POST /settings for DB-backed settings persistence
 
 const http = require('http');
 const { exec, execSync } = require('child_process');
@@ -655,6 +655,125 @@ function getLogsSummary() {
   }
 }
 
+// ─── Settings (GET + POST /settings) ─────────────────────────────────────────
+// Persists all UI settings to the configured database (SQLite or PostgreSQL).
+// SQLite: /var/lib/dnsguard/dnsguard.db — table: app_settings (key TEXT PK, value TEXT)
+// PostgreSQL: table app_settings (key TEXT PRIMARY KEY, value TEXT)
+
+var SETTINGS_FILE = process.env.SETTINGS_FILE || '/var/lib/dnsguard/settings.json';
+
+// Ensure the settings table exists in SQLite
+function ensureSettingsTableSQLite(db) {
+  db.prepare('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)').run();
+}
+
+// Ensure the settings table exists in PostgreSQL
+function ensureSettingsTablePg(client) {
+  return client.query(
+    'CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)'
+  );
+}
+
+// Read all settings as a plain object from the DB or fallback JSON file
+function readSettings(dbType, pgClientFn) {
+  if (dbType === 'remote' && pgClientFn) {
+    // Handled async — return a Promise
+    var client = pgClientFn();
+    return client.connect().then(function() {
+      return ensureSettingsTablePg(client);
+    }).then(function() {
+      return client.query('SELECT key, value FROM app_settings');
+    }).then(function(result) {
+      client.end();
+      var obj = {};
+      result.rows.forEach(function(r) {
+        try { obj[r.key] = JSON.parse(r.value); } catch(e) { obj[r.key] = r.value; }
+      });
+      return obj;
+    }).catch(function(err) {
+      client.end().catch(function(){});
+      throw err;
+    });
+  }
+  // Local SQLite
+  try {
+    var path = require('path');
+    var Database = require(path.join(__dirname, 'node_modules', 'better-sqlite3'));
+    var DB_PATH = process.env.DB_PATH || '/var/lib/dnsguard/dnsguard.db';
+    fs.mkdirSync(require('path').dirname(DB_PATH), { recursive: true });
+    var db = new Database(DB_PATH);
+    ensureSettingsTableSQLite(db);
+    var rows = db.prepare('SELECT key, value FROM app_settings').all();
+    db.close();
+    var obj = {};
+    rows.forEach(function(r) {
+      try { obj[r.key] = JSON.parse(r.value); } catch(e) { obj[r.key] = r.value; }
+    });
+    return Promise.resolve(obj);
+  } catch(e) {
+    // Fallback: JSON file (no SQLite driver installed)
+    try {
+      fs.mkdirSync(require('path').dirname(SETTINGS_FILE), { recursive: true });
+      var raw = fs.readFileSync(SETTINGS_FILE, 'utf8');
+      return Promise.resolve(JSON.parse(raw));
+    } catch(fe) {
+      return Promise.resolve({});
+    }
+  }
+}
+
+// Write settings object to DB — merges with existing values (upsert per key)
+function writeSettings(updates, dbType, pgClientFn) {
+  if (dbType === 'remote' && pgClientFn) {
+    var client = pgClientFn();
+    return client.connect().then(function() {
+      return ensureSettingsTablePg(client);
+    }).then(function() {
+      var queries = Object.keys(updates).map(function(key) {
+        return client.query(
+          'INSERT INTO app_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
+          [key, JSON.stringify(updates[key])]
+        );
+      });
+      return Promise.all(queries);
+    }).then(function() {
+      client.end();
+      return { ok: true };
+    }).catch(function(err) {
+      client.end().catch(function(){});
+      throw err;
+    });
+  }
+  // Local SQLite
+  try {
+    var path = require('path');
+    var Database = require(path.join(__dirname, 'node_modules', 'better-sqlite3'));
+    var DB_PATH = process.env.DB_PATH || '/var/lib/dnsguard/dnsguard.db';
+    fs.mkdirSync(require('path').dirname(DB_PATH), { recursive: true });
+    var db = new Database(DB_PATH);
+    ensureSettingsTableSQLite(db);
+    var stmt = db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value');
+    var insertMany = db.transaction(function(entries) {
+      entries.forEach(function(e) { stmt.run(e.key, JSON.stringify(e.value)); });
+    });
+    insertMany(Object.keys(updates).map(function(k) { return { key: k, value: updates[k] }; }));
+    db.close();
+    return Promise.resolve({ ok: true });
+  } catch(e) {
+    // Fallback: JSON file
+    try {
+      fs.mkdirSync(require('path').dirname(SETTINGS_FILE), { recursive: true });
+      var existing = {};
+      try { existing = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); } catch(fe) {}
+      Object.assign(existing, updates);
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(existing, null, 2), 'utf8');
+      return Promise.resolve({ ok: true });
+    } catch(fe) {
+      return Promise.reject(new Error('Settings write failed: ' + fe.message));
+    }
+  }
+}
+
 // ─── HTTP Server ──────────────────────────────────────────────────────────────
 var server = http.createServer(function(req, res) {
   if (req.method === 'OPTIONS') { cors(res); res.writeHead(204); res.end(); return; }
@@ -797,6 +916,27 @@ var server = http.createServer(function(req, res) {
       });
       return;
     }
+    // ── GET /settings — return all persisted app settings ────────────────────
+    if (req.method === 'GET' && url.pathname === '/settings') {
+      return readSettings(dbType, dbHost ? getRemoteDbClient : null)
+        .then(function(settings) { json(res, settings); })
+        .catch(function(err) { json(res, { error: err.message }, 502); });
+    }
+    // ── POST /settings — merge and persist app settings ───────────────────────
+    if (req.method === 'POST' && url.pathname === '/settings') {
+      var body = '';
+      req.on('data', function(d) { body += d; });
+      req.on('end', function() {
+        var updates;
+        try { updates = JSON.parse(body || '{}'); } catch(e) {
+          return json(res, { error: 'Invalid JSON: ' + e.message }, 400);
+        }
+        writeSettings(updates, dbType, dbHost ? getRemoteDbClient : null)
+          .then(function() { json(res, { ok: true }); })
+          .catch(function(err) { json(res, { error: err.message }, 502); });
+      });
+      return;
+    }
     json(res, { error: 'Not found' }, 404);
   }).catch(function(err) { json(res, { error: err.message }, 500); });
 });
@@ -833,11 +973,12 @@ sudo npm init -y
 # Core dependency (always required)
 sudo npm install --save
 
-# Optional: install DB drivers for /db/ping support (v1.2+)
-# For remote PostgreSQL testing:
+# Optional: install DB drivers for /db/ping and /settings support (v1.3+)
+# For remote PostgreSQL:
 sudo npm install pg
-# For local SQLite testing:
+# For local SQLite:
 sudo npm install better-sqlite3
+# Note: without DB drivers, settings fall back to a JSON file at SETTINGS_FILE path
 
 # Install systemd service
 sudo cp unbound-bridge.service /etc/systemd/system/
@@ -850,7 +991,13 @@ sudo systemctl status unbound-bridge
 
 # Test with auth (replace with your actual API key from Settings):
 curl -H "Authorization: Bearer change-me-use-a-long-random-string" \\
-     http://localhost:8080/stats | head -5`;
+     http://localhost:8080/stats | head -5
+
+# Test settings persistence:
+curl -s -X POST http://localhost:8080/settings \\
+     -H "Authorization: Bearer change-me-use-a-long-random-string" \\
+     -H "Content-Type: application/json" \\
+     -d '{"bridge_url":"http://localhost:8080"}' | python3 -m json.tool`;
 
 const BRIDGE_NGINX = `# Add inside your server {} block in nginx.conf
 # This proxies /api/* to the bridge and passes the Authorization header.
