@@ -1483,6 +1483,35 @@ export default function SetupDocs() {
                 </div>),
               },
               {
+                num: "05", title: "Enable Multi-Factor Authentication (MFA)", stepIcon: Shield,
+                body: (<div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>MFA enforcement is delegated entirely to Okta — DNSGuard does not handle MFA itself. Follow these steps in your Okta Admin Console:</p>
+                  <ol className="list-decimal list-inside space-y-2 text-xs">
+                    <li>Go to <strong className="text-foreground">Security → Multifactor</strong> and enable at least one factor (Okta Verify, Google Authenticator, or WebAuthn/FIDO2 recommended).</li>
+                    <li>Navigate to <strong className="text-foreground">Security → Authentication Policies</strong> and click <strong className="text-foreground">Add a Policy</strong>.</li>
+                    <li>Name the policy (e.g. <em>DNSGuard MFA Policy</em>), add a rule that targets the DNSGuard application, and set <strong className="text-foreground">Authentication → Possession factor</strong> to <em>Required</em>.</li>
+                    <li>Assign this policy to the DNSGuard OIDC app: open the app, go to the <strong className="text-foreground">Sign On</strong> tab → <strong className="text-foreground">Authentication policy</strong> → select your new policy.</li>
+                    <li>Save and test — users will now be prompted for MFA every time they sign in to DNSGuard (or based on your session/re-auth rules).</li>
+                  </ol>
+                  <div className="rounded-lg border border-border overflow-hidden text-xs mt-3">
+                    <table className="w-full">
+                      <thead className="bg-muted/60"><tr><th className="text-left px-4 py-2 font-medium text-foreground">Factor</th><th className="text-left px-4 py-2 font-medium text-foreground">Security</th><th className="text-left px-4 py-2 font-medium text-foreground">Notes</th></tr></thead>
+                      <tbody className="divide-y divide-border">
+                        {[
+                          ["Okta Verify (push)", "High", "Best UX — one-tap approval on mobile"],
+                          ["FIDO2 / WebAuthn", "Very High", "Phishing-resistant hardware key (YubiKey, Touch ID)"],
+                          ["Google Authenticator", "Medium", "TOTP — works offline, no push"],
+                          ["SMS / Voice", "Low", "Avoid — susceptible to SIM-swap attacks"],
+                        ].map(([f, s, n]) => (
+                          <tr key={f}><td className="px-4 py-2.5 font-mono text-[10px] text-foreground">{f}</td><td className="px-4 py-2.5 text-muted-foreground">{s}</td><td className="px-4 py-2.5 text-muted-foreground">{n}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20 text-xs text-primary mt-2"><CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" /><span>Okta Verify with push notification + number challenge is the recommended default for enterprise environments.</span></div>
+                </div>),
+              },
+              {
                 num: "04", title: "Add a Groups Claim to the ID Token", stepIcon: Key,
                 body: (<div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <p>To pass group membership for role resolution, add a <strong className="text-foreground">Groups claim</strong> to the ID token.</p>
@@ -1496,18 +1525,6 @@ export default function SetupDocs() {
                       <tbody><tr><td className="px-4 py-2.5 font-mono text-[10px] text-foreground">groups</td><td className="px-4 py-2.5 text-muted-foreground">Groups</td><td className="px-4 py-2.5 text-muted-foreground">Starts with: <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">dnsguard-</code></td><td className="px-4 py-2.5 text-muted-foreground">Any scope</td></tr></tbody>
                     </table>
                   </div>
-                </div>),
-              },
-              {
-                num: "05", title: "Enable Multi-Factor Authentication", stepIcon: Lock,
-                body: (<div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
-                  <p>MFA is enforced at the Okta level — DNSGuard inherits whatever policy you configure.</p>
-                  <ol className="list-decimal list-inside space-y-1.5 text-xs">
-                    <li>Go to <strong className="text-foreground">Security → Authenticators</strong> and enable Okta Verify, FIDO2/WebAuthn, or Google Authenticator.</li>
-                    <li>Create an <strong className="text-foreground">Authentication Policy</strong> requiring MFA for all users.</li>
-                    <li>Assign the policy to DNSGuard under <strong className="text-foreground">Applications → DNSGuard → Sign On → Authentication policies</strong>.</li>
-                  </ol>
-                  <div className="flex items-start gap-2 p-3 rounded-lg bg-success/5 border border-success/20 text-xs text-success"><CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" /><span>Policy-based MFA applies even via the OIDC redirect — it cannot be bypassed by hitting the callback URL directly.</span></div>
                 </div>),
               },
               {
