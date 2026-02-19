@@ -7,7 +7,7 @@ import {
   ExternalLink, Copy, Check, Monitor, Layers, HardDrive,
 } from "lucide-react";
 
-type Section = "setup" | "bridge" | "walkthrough" | "architecture" | "api" | "faq";
+type Section = "setup" | "bridge" | "walkthrough" | "architecture" | "api" | "okta" | "faq";
 
 const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: "setup", label: "Setup Guide", icon: Download },
@@ -15,6 +15,7 @@ const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: "walkthrough", label: "Walkthrough", icon: BookOpen },
   { id: "architecture", label: "Architecture", icon: Layers },
   { id: "api", label: "API Reference", icon: Terminal },
+  { id: "okta", label: "Okta SSO", icon: Key },
   { id: "faq", label: "FAQ", icon: FileText },
 ];
 
@@ -1409,7 +1410,148 @@ export default function SetupDocs() {
           </div>
         )}
 
+        {/* ─── Okta SSO ─── */}
+        {activeSection === "okta" && (
+          <div className="space-y-6">
+            <div className="bg-card border border-border rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-3">
+                <Key className="h-5 w-5 text-primary" />
+                <h2 className="text-base font-semibold">Okta SSO Integration</h2>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-primary/10 text-primary border border-primary/20">Enterprise</span>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+                DNSGuard uses <strong className="text-foreground">Okta</strong> as the sole identity provider — there is no separate user registration. This guide walks through creating the OIDC app in Okta, configuring it in DNSGuard, assigning users/groups, enabling MFA, and verifying the integration.
+              </p>
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { icon: Shield, title: "No Local Accounts", desc: "All user identities live in Okta. DNSGuard trusts Okta-issued tokens." },
+                  { icon: Lock, title: "OIDC / OAuth 2.0", desc: "Standard OpenID Connect Authorization Code flow with PKCE." },
+                  { icon: Globe, title: "Group-Based Access", desc: "Map Okta groups to DNSGuard roles: Admin, Operator, Viewer." },
+                ].map((c) => (
+                  <div key={c.title} className="flex flex-col gap-2 p-4 rounded-lg bg-muted/40 border border-border">
+                    <c.icon className="h-4 w-4 text-primary" />
+                    <p className="text-xs font-semibold">{c.title}</p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">{c.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {([
+              {
+                num: "01", title: "Create an Okta Application", stepIcon: Globe,
+                body: (<div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>In <strong className="text-foreground">Okta Admin Console</strong> go to <code className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded">Applications → Applications → Create App Integration</code>.</p>
+                  <ol className="list-decimal list-inside space-y-1.5 text-xs">
+                    <li>Select <strong className="text-foreground">OIDC – OpenID Connect</strong>, then <strong className="text-foreground">Web Application</strong>, click <em>Next</em>.</li>
+                    <li>Name the app <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">DNSGuard</code> and enable <em>Authorization Code</em> grant type.</li>
+                    <li>Sign-in redirect URI: <code className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded">https://your-dnsguard-domain/auth/callback</code></li>
+                    <li>Sign-out redirect URI: <code className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded">https://your-dnsguard-domain/</code></li>
+                    <li>Under Assignments, select <em>Limit access to selected groups</em> and add your DNS admin group.</li>
+                    <li>Save — copy the <strong className="text-foreground">Client ID</strong> and <strong className="text-foreground">Client Secret</strong>.</li>
+                  </ol>
+                </div>),
+              },
+              {
+                num: "02", title: "Configure DNSGuard Settings", stepIcon: Settings,
+                body: (<div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>Go to <code className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded">Settings → Okta SSO Configuration</code> and fill in:</p>
+                  <div className="rounded-lg border border-border overflow-hidden text-xs">
+                    <table className="w-full">
+                      <thead className="bg-muted/60"><tr><th className="text-left px-4 py-2 font-medium text-foreground">Field</th><th className="text-left px-4 py-2 font-medium text-foreground">Value</th></tr></thead>
+                      <tbody className="divide-y divide-border">
+                        {[["Okta Domain","https://your-org.okta.com"],["Client ID","From Step 01"],["Client Secret","From Step 01"]].map(([f,v])=>(
+                          <tr key={f}><td className="px-4 py-2.5 font-mono text-[10px] text-foreground">{f}</td><td className="px-4 py-2.5 text-muted-foreground">{v}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p>Click <strong className="text-foreground">Test Okta Integration</strong> to verify connectivity, then <strong className="text-foreground">Save &amp; Enable</strong>.</p>
+                </div>),
+              },
+              {
+                num: "03", title: "Assign Users & Groups in Okta", stepIcon: Shield,
+                body: (<div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>In the DNSGuard Okta app, open the <strong className="text-foreground">Assignments</strong> tab.</p>
+                  <ol className="list-decimal list-inside space-y-1.5 text-xs">
+                    <li>Click <strong className="text-foreground">Assign → Assign to Groups</strong> and add your DNS groups.</li>
+                    <li>Suggested groups: <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">dnsguard-admins</code>, <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">dnsguard-operators</code>, <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">dnsguard-viewers</code>.</li>
+                    <li>Only assigned users can sign in — unassigned users are blocked at the Okta login screen.</li>
+                  </ol>
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/5 border border-warning/20 text-xs text-warning"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /><span>Avoid assigning the Okta <em>Everyone</em> group unless all Okta users should access DNSGuard.</span></div>
+                </div>),
+              },
+              {
+                num: "04", title: "Add a Groups Claim to the ID Token", stepIcon: Key,
+                body: (<div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>To pass group membership for role resolution, add a <strong className="text-foreground">Groups claim</strong> to the ID token.</p>
+                  <ol className="list-decimal list-inside space-y-1.5 text-xs">
+                    <li>In the Okta app go to <strong className="text-foreground">Sign On → OpenID Connect ID Token → Edit</strong>.</li>
+                    <li>Add a claim: Name <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">groups</code>, Type: Groups, Filter: Starts with <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">dnsguard-</code>, Include in: Any scope. Save.</li>
+                  </ol>
+                  <div className="rounded-lg border border-border overflow-hidden text-xs">
+                    <table className="w-full">
+                      <thead className="bg-muted/60"><tr><th className="text-left px-4 py-2 font-medium text-foreground">Claim</th><th className="text-left px-4 py-2 font-medium text-foreground">Type</th><th className="text-left px-4 py-2 font-medium text-foreground">Filter</th><th className="text-left px-4 py-2 font-medium text-foreground">Include in</th></tr></thead>
+                      <tbody><tr><td className="px-4 py-2.5 font-mono text-[10px] text-foreground">groups</td><td className="px-4 py-2.5 text-muted-foreground">Groups</td><td className="px-4 py-2.5 text-muted-foreground">Starts with: <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">dnsguard-</code></td><td className="px-4 py-2.5 text-muted-foreground">Any scope</td></tr></tbody>
+                    </table>
+                  </div>
+                </div>),
+              },
+              {
+                num: "05", title: "Enable Multi-Factor Authentication", stepIcon: Lock,
+                body: (<div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>MFA is enforced at the Okta level — DNSGuard inherits whatever policy you configure.</p>
+                  <ol className="list-decimal list-inside space-y-1.5 text-xs">
+                    <li>Go to <strong className="text-foreground">Security → Authenticators</strong> and enable Okta Verify, FIDO2/WebAuthn, or Google Authenticator.</li>
+                    <li>Create an <strong className="text-foreground">Authentication Policy</strong> requiring MFA for all users.</li>
+                    <li>Assign the policy to DNSGuard under <strong className="text-foreground">Applications → DNSGuard → Sign On → Authentication policies</strong>.</li>
+                  </ol>
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-success/5 border border-success/20 text-xs text-success"><CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" /><span>Policy-based MFA applies even via the OIDC redirect — it cannot be bypassed by hitting the callback URL directly.</span></div>
+                </div>),
+              },
+              {
+                num: "06", title: "Verify the Integration", stepIcon: CheckCircle2,
+                body: (<div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <ol className="list-decimal list-inside space-y-1.5 text-xs">
+                    <li>In DNSGuard Settings, click <strong className="text-foreground">Test Okta Integration</strong> — confirm <em>Connected</em> status is shown.</li>
+                    <li>Open a private browser window and navigate to DNSGuard — you should be redirected to Okta.</li>
+                    <li>Sign in with an <em>assigned</em> Okta user + MFA. Confirm you land on the DNSGuard dashboard.</li>
+                    <li>Try an <em>unassigned</em> user — Okta should show <em>User is not assigned to the client application</em>.</li>
+                    <li>Check <strong className="text-foreground">Reports → System Log</strong> in Okta for any SSO errors.</li>
+                  </ol>
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/5 border border-warning/20 text-xs text-warning"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /><span><strong>Troubleshooting:</strong> <em>redirect_uri_mismatch</em> → verify the redirect URI in the Okta app matches exactly. <em>CORS error</em> → add your DNSGuard origin under <strong>Security → API → Trusted Origins</strong>.</span></div>
+                </div>),
+              },
+            ] as { num: string; title: string; stepIcon: React.ElementType; body: React.ReactNode }[]).map((step) => (
+              <div key={step.num} className="bg-card border border-border rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 border border-primary/20 text-primary font-bold text-sm font-mono shrink-0">{step.num}</div>
+                  <step.stepIcon className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-semibold">{step.title}</h3>
+                </div>
+                {step.body}
+              </div>
+            ))}
+
+            <div className="bg-card border border-border rounded-lg p-6">
+              <div className="flex items-center gap-2 mb-4"><FileText className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Quick Reference — OIDC Endpoints</h3></div>
+              <div className="rounded-lg border border-border overflow-hidden text-xs">
+                <table className="w-full">
+                  <thead className="bg-muted/60"><tr><th className="text-left px-4 py-2 font-medium text-foreground">Endpoint</th><th className="text-left px-4 py-2 font-medium text-foreground">URL</th></tr></thead>
+                  <tbody className="divide-y divide-border">
+                    {[["Authorization","https://your-org.okta.com/oauth2/default/v1/authorize"],["Token","https://your-org.okta.com/oauth2/default/v1/token"],["UserInfo","https://your-org.okta.com/oauth2/default/v1/userinfo"],["JWKS (keys)","https://your-org.okta.com/oauth2/default/v1/keys"],["Discovery","https://your-org.okta.com/.well-known/openid-configuration"]].map(([n,u])=>(
+                      <tr key={n}><td className="px-4 py-2.5 font-medium text-foreground">{n}</td><td className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground">{u}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-3">Replace <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">your-org.okta.com</code> with your Okta domain. If using a custom auth server, replace <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">default</code> with that server's ID.</p>
+            </div>
+          </div>
+        )}
+
         {/* ─── FAQ ─── */}
+
         {activeSection === "faq" && (
           <div className="space-y-2">
             {FAQ_ITEMS.map((item, idx) => (
