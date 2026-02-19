@@ -922,7 +922,14 @@ const FAQ_ITEMS = [
 
 export default function SetupDocs() {
   const [activeSection, setActiveSection] = useState<Section>("setup");
-  const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
+  const [completedSteps, setCompletedSteps] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem("setup-completed-steps");
+      return saved ? new Set<string>(JSON.parse(saved)) : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  });
   const [expandedStep, setExpandedStep] = useState<string | null>("s1");
   const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
@@ -935,6 +942,7 @@ export default function SetupDocs() {
     setCompletedSteps((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
+      localStorage.setItem("setup-completed-steps", JSON.stringify(Array.from(next)));
       return next;
     });
   };
