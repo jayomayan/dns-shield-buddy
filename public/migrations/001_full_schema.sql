@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS public.user_settings (
   db_name TEXT,
   db_user TEXT,
   db_password TEXT,
+  local_admin_enabled BOOLEAN NOT NULL DEFAULT true,
+  admin_password_hash TEXT NOT NULL DEFAULT '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );

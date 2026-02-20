@@ -2,15 +2,12 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, LogIn, ExternalLink, RefreshCw } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { useBridgeUrl, getBridgeHeaders, getBridgeUrl, getBridgeApiKey, setBridgeUrl, setBridgeApiKey } from "@/hooks/use-bridge-url";
+import { useBridgeUrl, getBridgeHeaders } from "@/hooks/use-bridge-url";
 import { saveOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
 import { setLocalAdminEnabled as persistLocalAdminEnabled, hashPassword, setAdminPasswordHash, getAdminPasswordHash } from "@/hooks/use-local-admin";
 import { User } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
 import { Json } from "@/integrations/supabase/types";
-
-// ── System user ID for settings (no Supabase auth needed) ─────────────────────
-const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000001";
+import { getConfig, saveConfig, reloadConfig, type AppConfig } from "@/lib/settings-store";
 
 interface EndpointResult {
   path: string;
@@ -87,71 +84,28 @@ interface AppSettings {
   notify_service?: boolean;
 }
 
-// ── Supabase helpers ──────────────────────────────────────────────────────────
+// ── Settings helpers using global store ───────────────────────────────────────
 
-async function loadSettingsFromSupabase(): Promise<AppSettings | null> {
-  try {
-    const { data, error } = await supabase
-      .from("user_settings")
-      .select("*")
-      .eq("user_id", SYSTEM_USER_ID)
-      .maybeSingle();
-    if (error) { console.error("Supabase load error:", error); return null; }
-    if (!data) {
-      // No row yet — create one with defaults so subsequent browsers find it
-      const defaults: AppSettings = {
-        bridge_url: null, bridge_api_key: null,
-        okta_domain: null, okta_client_id: null, okta_client_secret: null, okta_enabled: false,
-        api_tokens: null, log_retention: "30", log_rotation: "daily", log_max_size: "500",
-        notify_blocked: true, notify_service: true,
-      };
-      await supabase.from("user_settings").insert([{ user_id: SYSTEM_USER_ID, ...defaults }]);
-      return defaults;
-    }
-    return {
-      bridge_url: data.bridge_url,
-      bridge_api_key: data.bridge_api_key,
-      okta_domain: data.okta_domain,
-      okta_client_id: data.okta_client_id,
-      okta_client_secret: data.okta_client_secret,
-      okta_enabled: data.okta_enabled,
-      api_tokens: data.api_tokens,
-      log_retention: data.log_retention,
-      log_rotation: data.log_rotation,
-      log_max_size: data.log_max_size,
-      notify_blocked: data.notify_blocked,
-      notify_service: data.notify_service,
-    };
-  } catch {
-    return null;
-  }
+function loadSettingsFromStore(): AppSettings {
+  const cfg = getConfig();
+  return {
+    bridge_url: cfg.bridge_url,
+    bridge_api_key: cfg.bridge_api_key,
+    okta_domain: cfg.okta_domain,
+    okta_client_id: cfg.okta_client_id,
+    okta_client_secret: cfg.okta_client_secret,
+    okta_enabled: cfg.okta_enabled,
+    api_tokens: cfg.api_tokens as Json,
+    log_retention: cfg.log_retention,
+    log_rotation: cfg.log_rotation,
+    log_max_size: cfg.log_max_size,
+    notify_blocked: cfg.notify_blocked,
+    notify_service: cfg.notify_service,
+  };
 }
 
-async function saveSettingsToSupabase(patch: AppSettings): Promise<boolean> {
-  try {
-    // First check if a row exists
-    const { data: existing } = await supabase
-      .from("user_settings")
-      .select("id")
-      .eq("user_id", SYSTEM_USER_ID)
-      .maybeSingle();
-
-    if (existing) {
-      const { error } = await supabase
-        .from("user_settings")
-        .update(patch)
-        .eq("user_id", SYSTEM_USER_ID);
-      return !error;
-    } else {
-      const { error } = await supabase
-        .from("user_settings")
-        .insert([{ user_id: SYSTEM_USER_ID, ...patch }]);
-      return !error;
-    }
-  } catch (e) {
-    console.error("Supabase save failed:", e);
-    return false;
-  }
+async function saveSettingsToStore(patch: AppSettings): Promise<boolean> {
+  return saveConfig(patch as Partial<AppConfig>);
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -257,8 +211,8 @@ export default function SettingsPage({ user }: { user: User | null }) {
     if (s.notify_service !== undefined) setNotifyService(!!s.notify_service);
 
     // Bridge URL/key come from settings
-    if (s.bridge_url)     { setBridgeUrl(s.bridge_url);    setBridgeUrlState(s.bridge_url);    setBridgeInput(s.bridge_url); }
-    if (s.bridge_api_key) { setBridgeApiKey(s.bridge_api_key); setBridgeApiKeyState(s.bridge_api_key); setApiKeyInput(s.bridge_api_key); }
+    if (s.bridge_url)     { setBridgeUrlState(s.bridge_url);    setBridgeInput(s.bridge_url); }
+    if (s.bridge_api_key) { setBridgeApiKeyState(s.bridge_api_key); setApiKeyInput(s.bridge_api_key); }
     if (s.api_tokens) {
       try { setTokens(s.api_tokens as unknown as ApiToken[]); } catch { /* ignore */ }
     }
@@ -267,23 +221,27 @@ export default function SettingsPage({ user }: { user: User | null }) {
   const fetchSettings = useCallback(async () => {
     setLoadingSettings(true);
     setLoadError(null);
-    const s = await loadSettingsFromSupabase();
-    if (s) {
+    try {
+      await reloadConfig();
+      const s = loadSettingsFromStore();
       applySettings(s);
-    } else {
-      setLoadError("Could not load settings from Supabase. Check your local Supabase instance is running.");
+    } catch {
+      setLoadError("Could not load settings. Check your database instance is running.");
     }
     setLoadingSettings(false);
   }, [applySettings]);
 
   useEffect(() => {
-    fetchSettings();
+    // Settings already loaded by SettingsLoader — just apply them
+    const s = loadSettingsFromStore();
+    applySettings(s);
+    setLoadingSettings(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Persist to Supabase ──────────────────────────────────────────────────
+  // ── Persist to DB ───────────────────────────────────────────────────────
   const saveToSupabase = useCallback(async (patch: AppSettings): Promise<boolean> => {
-    const ok = await saveSettingsToSupabase(patch);
-    if (!ok) toast({ title: "Save failed", description: "Could not save to Supabase. Check your local Supabase instance.", variant: "destructive" });
+    const ok = await saveSettingsToStore(patch);
+    if (!ok) toast({ title: "Save failed", description: "Could not save settings. Check your database instance.", variant: "destructive" });
     return ok;
   }, []);
 

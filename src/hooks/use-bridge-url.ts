@@ -1,42 +1,27 @@
-// Persistent bridge URL & API key — stored in localStorage so they survive page reloads.
-import { useState, useCallback } from "react";
+// Bridge URL & API key — reads from DB-backed settings store.
+// localStorage is no longer used for configuration.
 
-const STORAGE_KEY = "unbound_bridge_url";
-const API_KEY_STORAGE_KEY = "unbound_bridge_api_key";
-const DB_CONFIG_KEY = "unbound_db_config";
+import { useState, useCallback, useEffect } from "react";
+import { getConfig, subscribe } from "@/lib/settings-store";
+
 const DEFAULT_URL = "http://localhost:8080";
 
 export function getBridgeUrl(): string {
-  try {
-    return localStorage.getItem(STORAGE_KEY) || DEFAULT_URL;
-  } catch {
-    return DEFAULT_URL;
-  }
-}
-
-export function setBridgeUrl(url: string): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, url.replace(/\/$/, "")); // strip trailing slash
-  } catch {}
+  return getConfig().bridge_url || DEFAULT_URL;
 }
 
 export function getBridgeApiKey(): string {
-  try {
-    return localStorage.getItem(API_KEY_STORAGE_KEY) || "";
-  } catch {
-    return "";
-  }
+  return getConfig().bridge_api_key || "";
 }
 
-export function setBridgeApiKey(key: string): void {
-  try {
-    if (key) {
-      localStorage.removeItem(API_KEY_STORAGE_KEY);
-      localStorage.setItem(API_KEY_STORAGE_KEY, key);
-    } else {
-      localStorage.removeItem(API_KEY_STORAGE_KEY);
-    }
-  } catch {}
+// These are kept for compatibility but now just update the in-memory store
+// The actual persistence happens via saveConfig() in SettingsPage
+export function setBridgeUrl(_url: string): void {
+  // No-op: persistence is handled by settings store
+}
+
+export function setBridgeApiKey(_key: string): void {
+  // No-op: persistence is handled by settings store
 }
 
 export interface DbConfig {
@@ -49,17 +34,19 @@ export interface DbConfig {
 }
 
 export function getDbConfig(): DbConfig {
-  try {
-    const raw = localStorage.getItem(DB_CONFIG_KEY);
-    if (raw) return JSON.parse(raw) as DbConfig;
-  } catch {}
-  return { db_type: "local" };
+  const cfg = getConfig();
+  return {
+    db_type: cfg.db_type || "local",
+    db_host: cfg.db_host,
+    db_port: cfg.db_port,
+    db_name: cfg.db_name,
+    db_user: cfg.db_user,
+    db_password: cfg.db_password,
+  };
 }
 
-export function setDbConfig(cfg: DbConfig): void {
-  try {
-    localStorage.setItem(DB_CONFIG_KEY, JSON.stringify(cfg));
-  } catch {}
+export function setDbConfig(_cfg: DbConfig): void {
+  // No-op: persistence is handled by settings store
 }
 
 /** Returns fetch headers including Authorization and X-DB-Config if configured. */
@@ -68,7 +55,6 @@ export function getBridgeHeaders(): HeadersInit {
   const db = getDbConfig();
   const headers: Record<string, string> = {};
   if (key) headers["Authorization"] = `Bearer ${key}`;
-  // Always send db config so bridge routes to the right database
   headers["X-DB-Type"] = db.db_type || "local";
   if (db.db_type === "remote") {
     if (db.db_host)     headers["X-DB-Host"]     = db.db_host;
@@ -84,14 +70,18 @@ export function useBridgeUrl() {
   const [url, setUrlState] = useState<string>(getBridgeUrl);
   const [apiKey, setApiKeyState] = useState<string>(getBridgeApiKey);
 
+  useEffect(() => {
+    return subscribe(() => {
+      setUrlState(getBridgeUrl());
+      setApiKeyState(getBridgeApiKey());
+    });
+  }, []);
+
   const setUrl = useCallback((next: string) => {
-    const clean = next.replace(/\/$/, "");
-    setBridgeUrl(clean);
-    setUrlState(clean);
+    setUrlState(next.replace(/\/$/, ""));
   }, []);
 
   const setApiKey = useCallback((next: string) => {
-    setBridgeApiKey(next);
     setApiKeyState(next);
   }, []);
 
