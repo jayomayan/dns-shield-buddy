@@ -23,12 +23,6 @@ export interface AppConfig {
   log_max_size: string;
   notify_blocked: boolean;
   notify_service: boolean;
-  db_type: string;
-  db_host: string | null;
-  db_port: string | null;
-  db_name: string | null;
-  db_user: string | null;
-  db_password: string | null;
   local_admin_enabled: boolean;
   admin_password_hash: string;
 }
@@ -48,12 +42,6 @@ const DEFAULTS: AppConfig = {
   log_max_size: "500",
   notify_blocked: true,
   notify_service: true,
-  db_type: "local",
-  db_host: null,
-  db_port: null,
-  db_name: null,
-  db_user: null,
-  db_password: null,
   local_admin_enabled: true,
   admin_password_hash: DEFAULT_PASSWORD_HASH,
 };
@@ -128,13 +116,6 @@ async function _doLoad(): Promise<AppConfig> {
       log_max_size: data.log_max_size,
       notify_blocked: data.notify_blocked,
       notify_service: data.notify_service,
-      db_type: (data as Record<string, unknown>).db_type as string ?? "local",
-      db_host: (data as Record<string, unknown>).db_host as string | null ?? null,
-      db_port: (data as Record<string, unknown>).db_port as string | null ?? null,
-      db_name: (data as Record<string, unknown>).db_name as string | null ?? null,
-      db_user: (data as Record<string, unknown>).db_user as string | null ?? null,
-      db_password: (data as Record<string, unknown>).db_password as string | null ?? null,
-      // These fields may not exist in DB yet — fall back to defaults
       local_admin_enabled: (data as Record<string, unknown>).local_admin_enabled as boolean ?? true,
       admin_password_hash: (data as Record<string, unknown>).admin_password_hash as string ?? DEFAULT_PASSWORD_HASH,
     };

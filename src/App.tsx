@@ -307,7 +307,7 @@ function AuthGate({ children }: { children: (user: User | null) => React.ReactNo
     <>
       {backendDown && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-destructive text-destructive-foreground text-xs text-center py-2 px-4 font-medium shadow-md">
-          ⚠ Backend unreachable — check your local Supabase instance is running and VITE_SUPABASE_URL is correct.
+          ⚠ Backend unreachable — check your connection.
           <button onClick={() => setBackendDown(false)} className="ml-3 underline opacity-80 hover:opacity-100">Dismiss</button>
         </div>
       )}
