@@ -96,17 +96,26 @@ export async function handleOktaCallback(
   }
 
   const redirectUri  = `${window.location.origin}/auth/callback`;
+
+  // Use standalone proxy if configured, otherwise fall back to Supabase edge function
+  const proxyUrl = import.meta.env.VITE_OKTA_PROXY_URL as string | undefined;
   const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL as string;
   const supabaseKey  = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
+  const fetchUrl = proxyUrl
+    ? `${proxyUrl.replace(/\/$/, "")}/okta-token`
+    : `${supabaseUrl}/functions/v1/okta-token`;
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (!proxyUrl) {
+    headers["apikey"] = supabaseKey;
+    headers["Authorization"] = `Bearer ${supabaseKey}`;
+  }
+
   // Token exchange is done server-side to avoid Okta's browser PKCE enforcement
-  const res = await fetch(`${supabaseUrl}/functions/v1/okta-token`, {
+  const res = await fetch(fetchUrl, {
     method:  "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey":        supabaseKey,
-      "Authorization": `Bearer ${supabaseKey}`,
-    },
+    headers,
     body: JSON.stringify({
       code,
       redirectUri,
