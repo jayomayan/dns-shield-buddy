@@ -1,0 +1,15 @@
+[Unit]
+Description=Okta Token Exchange Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/dnsguard/server
+ExecStart=/usr/bin/node /opt/dnsguard/server/okta-token-proxy.js
+Restart=on-failure
+RestartSec=5
+Environment=OKTA_PROXY_PORT=3001
+
+[Install]
+WantedBy=multi-user.target
