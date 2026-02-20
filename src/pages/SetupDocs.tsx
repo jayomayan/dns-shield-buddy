@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { deployEdgeFunction } from "@/lib/unbound-bridge";
+import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, CheckCircle2, Circle, ChevronDown, ChevronRight,
@@ -984,6 +986,47 @@ var server = http.createServer(function(req, res) {
       });
       return;
     }
+    // ── POST /deploy-edge-function — deploy okta-token to Docker Supabase ────
+    if (req.method === 'POST' && url.pathname === '/deploy-edge-function') {
+      var body = '';
+      req.on('data', function(d) { body += d; });
+      req.on('end', function() {
+        try {
+          var payload = JSON.parse(body);
+          var fnName = (payload.functionName || 'okta-token').replace(/[^a-zA-Z0-9_-]/g, '');
+          var fnCode = payload.code || '';
+          if (!fnCode) return json(res, { error: 'No function code provided' }, 400);
+
+          // Find supabase docker directory
+          var supabaseDirs = [
+            '/root/supabase/docker',
+            '/opt/supabase/docker',
+            process.env.HOME + '/supabase/docker',
+          ];
+          var supabaseDir = '';
+          for (var i = 0; i < supabaseDirs.length; i++) {
+            if (fs.existsSync(supabaseDirs[i] + '/docker-compose.yml') || fs.existsSync(supabaseDirs[i] + '/docker-compose.yaml')) {
+              supabaseDir = supabaseDirs[i];
+              break;
+            }
+          }
+          if (!supabaseDir && payload.supabaseDir) supabaseDir = payload.supabaseDir;
+          if (!supabaseDir) return json(res, { error: 'Supabase Docker directory not found. Set supabaseDir in request body.' }, 404);
+
+          // Create function directory and write code
+          var fnDir = supabaseDir + '/volumes/functions/' + fnName;
+          execSync('mkdir -p ' + fnDir);
+          fs.writeFileSync(fnDir + '/index.ts', fnCode);
+
+          // Restart the functions container
+          exec('cd ' + supabaseDir + ' && docker compose restart functions', function(err, stdout, stderr) {
+            if (err) return json(res, { ok: false, error: 'Function written but container restart failed: ' + (stderr || err.message) }, 500);
+            json(res, { ok: true, message: 'Edge function "' + fnName + '" deployed and functions container restarted.', path: fnDir });
+          });
+        } catch(e) { json(res, { error: e.message }, 500); }
+      });
+      return;
+    }
     json(res, { error: 'Not found' }, 404);
   }).catch(function(err) { json(res, { error: err.message }, 500); });
 });
@@ -1274,6 +1317,156 @@ const FAQ_ITEMS = [
     a: "Yes. Use the theme toggle in the top navigation bar to switch between Dark Mode, Light Mode, and System (follows your OS preference). Your choice is saved locally and persists across sessions.",
   },
 ];
+
+const OKTA_TOKEN_FUNCTION_CODE = `import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin":  "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  try {
+    const { code, redirectUri, domain, clientId, clientSecret } = await req.json();
+
+    if (!code || !redirectUri || !domain || !clientId || !clientSecret) {
+      return new Response(
+        JSON.stringify({ error: "Missing required fields" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const tokenUrl = \\\`\\\${domain.replace(/\\\\/$/, "")}/oauth2/v1/token\\\`;
+
+    const body = new URLSearchParams({
+      grant_type:    "authorization_code",
+      code,
+      redirect_uri:  redirectUri,
+      client_id:     clientId,
+      client_secret: clientSecret,
+    });
+
+    const oktaRes = await fetch(tokenUrl, {
+      method:  "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+
+    const data = await oktaRes.json();
+
+    return new Response(JSON.stringify(data), {
+      status:  oktaRes.status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: String(err) }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+});`;
+
+function DeployEdgeFunctionCard() {
+  const [deploying, setDeploying] = useState(false);
+  const [supabaseDir, setSupabaseDir] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
+
+  const handleDeploy = useCallback(async () => {
+    setDeploying(true);
+    setResult(null);
+    try {
+      const res = await deployEdgeFunction("okta-token", OKTA_TOKEN_FUNCTION_CODE, supabaseDir || undefined);
+      setResult(res);
+      if (res.ok) {
+        toast({ title: "Edge function deployed", description: res.message || "okta-token is now available." });
+      } else {
+        toast({ title: "Deployment failed", description: res.error || "Unknown error", variant: "destructive" });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setResult({ ok: false, error: msg });
+      toast({ title: "Deployment failed", description: msg, variant: "destructive" });
+    } finally {
+      setDeploying(false);
+    }
+  }, [supabaseDir]);
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-6">
+      <div className="flex items-center gap-3 mb-3">
+        <Zap className="h-4 w-4 text-primary" />
+        <h3 className="text-sm font-semibold">Deploy Edge Functions</h3>
+      </div>
+      <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+        Deploy the <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">okta-token</code> edge function to your Docker Supabase instance via the bridge. The bridge will copy the function code and restart the <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">functions</code> container.
+      </p>
+
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs text-muted-foreground block mb-1">
+            Supabase Docker directory <span className="text-muted-foreground/60">(optional — auto-detected)</span>
+          </label>
+          <input
+            type="text"
+            value={supabaseDir}
+            onChange={(e) => setSupabaseDir(e.target.value)}
+            placeholder="/root/supabase/docker"
+            className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+
+        <button
+          onClick={handleDeploy}
+          disabled={deploying}
+          className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
+        >
+          {deploying ? (
+            <>
+              <div className="h-4 w-4 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
+              Deploying…
+            </>
+          ) : (
+            <>
+              <Zap className="h-4 w-4" />
+              Deploy okta-token Function
+            </>
+          )}
+        </button>
+
+        {result && (
+          <div className={`p-3 rounded-lg border text-xs ${
+            result.ok
+              ? "bg-primary/5 border-primary/20 text-primary"
+              : "bg-destructive/5 border-destructive/20 text-destructive"
+          }`}>
+            {result.ok ? (
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                <span>{result.message}</span>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span>{result.error}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 flex items-start gap-2 p-3 rounded-lg bg-muted/40 border border-border">
+        <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Requires the bridge to be running with root/sudo access on the VM. The bridge auto-detects the Supabase Docker directory at <code className="font-mono">/root/supabase/docker</code>, <code className="font-mono">/opt/supabase/docker</code>, or <code className="font-mono">~/supabase/docker</code>.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default function SetupDocs() {
   const [activeSection, setActiveSection] = useState<Section>("setup");
@@ -2247,6 +2440,9 @@ curl -s http://localhost:8000/rest/v1/user_settings?limit=1 \\
                 </div>
               ))}
             </div>
+
+            {/* Deploy Edge Function */}
+            <DeployEdgeFunctionCard />
 
             {/* Checklist */}
             <div className="bg-card border border-border rounded-lg p-6">
