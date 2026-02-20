@@ -21,12 +21,6 @@ export type Database = {
           bridge_api_key: string | null
           bridge_url: string | null
           created_at: string
-          db_host: string | null
-          db_name: string | null
-          db_password: string | null
-          db_port: string | null
-          db_type: string
-          db_user: string | null
           id: string
           local_admin_enabled: boolean
           log_max_size: string
@@ -47,12 +41,6 @@ export type Database = {
           bridge_api_key?: string | null
           bridge_url?: string | null
           created_at?: string
-          db_host?: string | null
-          db_name?: string | null
-          db_password?: string | null
-          db_port?: string | null
-          db_type?: string
-          db_user?: string | null
           id?: string
           local_admin_enabled?: boolean
           log_max_size?: string
@@ -73,12 +61,6 @@ export type Database = {
           bridge_api_key?: string | null
           bridge_url?: string | null
           created_at?: string
-          db_host?: string | null
-          db_name?: string | null
-          db_password?: string | null
-          db_port?: string | null
-          db_type?: string
-          db_user?: string | null
           id?: string
           local_admin_enabled?: boolean
           log_max_size?: string
