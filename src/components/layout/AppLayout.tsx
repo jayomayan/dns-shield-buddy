@@ -6,7 +6,7 @@ import {
   Activity, ChevronLeft, ChevronRight, Globe, LogOut, Sun, Moon, Monitor,
 } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
-import { supabase } from "@/integrations/supabase/client";
+import { getActiveClient } from "@/lib/supabase-client";
 import { User } from "@supabase/supabase-js";
 import { toast } from "@/hooks/use-toast";
 import { useOktaContext } from "@/App";
@@ -33,7 +33,7 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
   const oktaConfig = getOktaConfig();
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await getActiveClient().auth.signOut();
     if (oktaConfig?.enabled && oktaSession) {
       oktaSignOut();
       try {
