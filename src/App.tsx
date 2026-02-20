@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { useEffect, useState, createContext, useContext } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
+import { loadConfig, isLoaded } from "@/lib/settings-store";
 import AppLayout from "@/components/layout/AppLayout";
 import Dashboard from "@/pages/Dashboard";
 import DnsRules from "@/pages/DnsRules";
@@ -56,6 +57,32 @@ interface LocalAdminCtx {
 const LocalAdminContext = createContext<LocalAdminCtx>({ session: null, signOut: () => {} });
 export const useLocalAdminContext = () => useContext(LocalAdminContext);
 
+// ─── Settings Loader ─────────────────────────────────────────────────────────
+// Loads all config from DB before rendering auth gates
+
+function SettingsLoader({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(isLoaded());
+
+  useEffect(() => {
+    if (!ready) {
+      loadConfig().then(() => setReady(true));
+    }
+  }, [ready]);
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          <p className="text-xs text-muted-foreground">Loading configuration…</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 // ─── Okta Gate ───────────────────────────────────────────────────────────────
 
 function OktaGate({ children }: { children: React.ReactNode }) {
@@ -63,7 +90,6 @@ function OktaGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<OktaSession | null>(() => getOktaSession());
   const [starting, setStarting] = useState(false);
 
-  // Re-check session validity every minute
   useEffect(() => {
     const t = setInterval(() => setSession(getOktaSession()), 60_000);
     return () => clearInterval(t);
@@ -74,21 +100,17 @@ function OktaGate({ children }: { children: React.ReactNode }) {
     setSession(null);
   };
 
-  // Okta not configured / not enabled → bypass gate
   if (!config?.enabled) {
     return <OktaContext.Provider value={{ session: null, signOut }}>{children}</OktaContext.Provider>;
   }
 
-  // Valid session → render app
   if (session) {
     return <OktaContext.Provider value={{ session, signOut }}>{children}</OktaContext.Provider>;
   }
 
-  // No session → show Okta login wall
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
-        {/* Logo */}
         <div className="flex items-center gap-3 justify-center">
           <Globe className="h-8 w-8 text-primary" />
           <div>
@@ -144,22 +166,18 @@ function LocalAdminGate({ children }: { children: React.ReactNode }) {
 
   const signOut = () => { clearLocalAdminSession(); setSession(null); };
 
-  // If Okta is enabled, skip this gate entirely — Okta handles auth
   if (oktaConfig?.enabled) {
     return <LocalAdminContext.Provider value={{ session: null, signOut }}>{children}</LocalAdminContext.Provider>;
   }
 
-  // Local admin disabled — bypass gate
   if (!enabled) {
     return <LocalAdminContext.Provider value={{ session: null, signOut }}>{children}</LocalAdminContext.Provider>;
   }
 
-  // Valid session — let through
   if (session) {
     return <LocalAdminContext.Provider value={{ session, signOut }}>{children}</LocalAdminContext.Provider>;
   }
 
-  // Show local admin login wall
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -180,7 +198,6 @@ function LocalAdminGate({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
-        {/* Logo */}
         <div className="flex items-center gap-3 justify-center">
           <Globe className="h-8 w-8 text-primary" />
           <div>
@@ -261,7 +278,6 @@ function LocalAdminGate({ children }: { children: React.ReactNode }) {
 function AuthGate({ children }: { children: (user: User | null) => React.ReactNode }) {
   const [user, setUser]       = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-
   const [backendDown, setBackendDown] = useState(false);
 
   useEffect(() => {
@@ -313,28 +329,30 @@ const App = () => (
             {/* Public: Okta callback must be outside the gate */}
             <Route path="/auth/callback" element={<OktaCallback />} />
 
-            {/* Everything else is gated */}
+            {/* Everything else: load settings from DB first, then gate */}
             <Route
               path="*"
               element={
-                <OktaGate>
-                  <LocalAdminGate>
-                    <AuthGate>
-                      {(user) => (
-                        <Routes>
-                          <Route path="/" element={<AppLayout user={user}><Dashboard /></AppLayout>} />
-                          <Route path="/dns-rules" element={<AppLayout user={user}><DnsRules /></AppLayout>} />
-                          <Route path="/query-logs" element={<AppLayout user={user}><QueryLogs /></AppLayout>} />
-                          <Route path="/monitoring" element={<AppLayout user={user}><Monitoring /></AppLayout>} />
-                          <Route path="/unbound" element={<AppLayout user={user}><UnboundConfig /></AppLayout>} />
-                          <Route path="/setup" element={<AppLayout user={user}><SetupDocs /></AppLayout>} />
-                          <Route path="/settings" element={<AppLayout user={user}><SettingsPage user={user} /></AppLayout>} />
-                          <Route path="*" element={<NotFound />} />
-                        </Routes>
-                      )}
-                    </AuthGate>
-                  </LocalAdminGate>
-                </OktaGate>
+                <SettingsLoader>
+                  <OktaGate>
+                    <LocalAdminGate>
+                      <AuthGate>
+                        {(user) => (
+                          <Routes>
+                            <Route path="/" element={<AppLayout user={user}><Dashboard /></AppLayout>} />
+                            <Route path="/dns-rules" element={<AppLayout user={user}><DnsRules /></AppLayout>} />
+                            <Route path="/query-logs" element={<AppLayout user={user}><QueryLogs /></AppLayout>} />
+                            <Route path="/monitoring" element={<AppLayout user={user}><Monitoring /></AppLayout>} />
+                            <Route path="/unbound" element={<AppLayout user={user}><UnboundConfig /></AppLayout>} />
+                            <Route path="/setup" element={<AppLayout user={user}><SetupDocs /></AppLayout>} />
+                            <Route path="/settings" element={<AppLayout user={user}><SettingsPage user={user} /></AppLayout>} />
+                            <Route path="*" element={<NotFound />} />
+                          </Routes>
+                        )}
+                      </AuthGate>
+                    </LocalAdminGate>
+                  </OktaGate>
+                </SettingsLoader>
               }
             />
           </Routes>
@@ -345,4 +363,3 @@ const App = () => (
 );
 
 export default App;
-

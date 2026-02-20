@@ -1,34 +1,51 @@
-// Simple Okta OIDC — Authorization Code flow with Client Secret (no PKCE)
+// Okta OIDC — Authorization Code flow with Client Secret (no PKCE)
+// Config (domain, clientId, clientSecret, enabled) comes from DB-backed settings store.
+// Session tokens and CSRF state remain in localStorage (ephemeral, per-browser).
 
-const OKTA_CONFIG_KEY  = "okta_config";
+import { getConfig, saveConfig } from "@/lib/settings-store";
+
 const OKTA_SESSION_KEY = "okta_session";
 const OKTA_STATE_KEY   = "okta_state";
 
-// ─── Config ───────────────────────────────────────────────────────────────────
+// ─── Config (from DB) ─────────────────────────────────────────────────────────
 
 export interface OktaConfig {
-  domain:        string;  // e.g. https://dev-xxx.okta.com
+  domain:        string;
   clientId:      string;
   clientSecret?: string;
   enabled:       boolean;
 }
 
 export function getOktaConfig(): OktaConfig | null {
-  try {
-    const raw = localStorage.getItem(OKTA_CONFIG_KEY);
-    return raw ? JSON.parse(raw) as OktaConfig : null;
-  } catch { return null; }
+  const cfg = getConfig();
+  if (!cfg.okta_domain && !cfg.okta_client_id) return null;
+  return {
+    domain:       cfg.okta_domain || "",
+    clientId:     cfg.okta_client_id || "",
+    clientSecret: cfg.okta_client_secret || undefined,
+    enabled:      cfg.okta_enabled,
+  };
 }
 
 export function saveOktaConfig(cfg: OktaConfig): void {
-  try { localStorage.setItem(OKTA_CONFIG_KEY, JSON.stringify(cfg)); } catch {}
+  saveConfig({
+    okta_domain:        cfg.domain,
+    okta_client_id:     cfg.clientId,
+    okta_client_secret: cfg.clientSecret || null,
+    okta_enabled:       cfg.enabled,
+  });
 }
 
 export function clearOktaConfig(): void {
-  try { localStorage.removeItem(OKTA_CONFIG_KEY); } catch {}
+  saveConfig({
+    okta_domain: null,
+    okta_client_id: null,
+    okta_client_secret: null,
+    okta_enabled: false,
+  });
 }
 
-// ─── Session ──────────────────────────────────────────────────────────────────
+// ─── Session (localStorage — per-browser) ─────────────────────────────────────
 
 export interface OktaSession {
   accessToken: string;
@@ -59,7 +76,6 @@ export function clearOktaSession(): void {
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 export function startOktaLogin(config: OktaConfig): void {
-  // Generate a random state value for CSRF protection
   const stateBytes = new Uint8Array(16);
   window.crypto.getRandomValues(stateBytes);
   const state = Array.from(stateBytes).map(b => b.toString(16).padStart(2, "0")).join("");
@@ -97,7 +113,6 @@ export async function handleOktaCallback(
 
   const redirectUri  = `${window.location.origin}/auth/callback`;
 
-  // Use standalone proxy if configured, otherwise fall back to Supabase edge function
   const proxyUrl = import.meta.env.VITE_OKTA_PROXY_URL as string | undefined;
   const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL as string;
   const supabaseKey  = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
@@ -112,7 +127,6 @@ export async function handleOktaCallback(
     headers["Authorization"] = `Bearer ${supabaseKey}`;
   }
 
-  // Token exchange is done server-side to avoid Okta's browser PKCE enforcement
   const res = await fetch(fetchUrl, {
     method:  "POST",
     headers,
@@ -136,7 +150,6 @@ export async function handleOktaCallback(
     expires_in:   number;
   };
 
-  // Decode JWT payload (no signature verification needed client-side)
   const [, payloadB64] = tokens.id_token.split(".");
   const payload = JSON.parse(atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, string>;
 

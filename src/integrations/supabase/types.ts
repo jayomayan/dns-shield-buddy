@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       user_settings: {
         Row: {
+          admin_password_hash: string
           api_tokens: Json | null
           bridge_api_key: string | null
           bridge_url: string | null
@@ -27,6 +28,7 @@ export type Database = {
           db_type: string
           db_user: string | null
           id: string
+          local_admin_enabled: boolean
           log_max_size: string
           log_retention: string
           log_rotation: string
@@ -40,6 +42,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          admin_password_hash?: string
           api_tokens?: Json | null
           bridge_api_key?: string | null
           bridge_url?: string | null
@@ -51,6 +54,7 @@ export type Database = {
           db_type?: string
           db_user?: string | null
           id?: string
+          local_admin_enabled?: boolean
           log_max_size?: string
           log_retention?: string
           log_rotation?: string
@@ -64,6 +68,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          admin_password_hash?: string
           api_tokens?: Json | null
           bridge_api_key?: string | null
           bridge_url?: string | null
@@ -75,6 +80,7 @@ export type Database = {
           db_type?: string
           db_user?: string | null
           id?: string
+          local_admin_enabled?: boolean
           log_max_size?: string
           log_retention?: string
           log_rotation?: string
