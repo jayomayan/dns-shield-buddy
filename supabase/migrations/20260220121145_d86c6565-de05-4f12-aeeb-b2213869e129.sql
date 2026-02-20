@@ -1,0 +1,7 @@
+ALTER TABLE public.user_settings
+  DROP COLUMN IF EXISTS db_type,
+  DROP COLUMN IF EXISTS db_host,
+  DROP COLUMN IF EXISTS db_port,
+  DROP COLUMN IF EXISTS db_name,
+  DROP COLUMN IF EXISTS db_user,
+  DROP COLUMN IF EXISTS db_password;
