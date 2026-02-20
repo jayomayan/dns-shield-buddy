@@ -264,9 +264,6 @@ function LocalAdminGate({ children }: { children: React.ReactNode }) {
             {loggingIn ? "Verifying…" : "Sign in"}
           </button>
 
-          <p className="text-[10px] text-muted-foreground text-center">
-            Default credentials: <code className="font-mono bg-muted px-1 rounded">admin / admin</code>
-          </p>
         </form>
       </div>
     </div>
