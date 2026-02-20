@@ -266,6 +266,9 @@ function AuthGate({ children }: { children: (user: User | null) => React.ReactNo
     supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
       setLoading(false);
+    }).catch((err) => {
+      console.warn("Supabase auth unreachable, continuing without auth:", err);
+      setLoading(false);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
