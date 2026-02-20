@@ -212,21 +212,6 @@ export interface PingServerResult {
   status: "ok" | "timeout";
 }
 
-/** Deploy an edge function to self-hosted Docker Supabase via the bridge (POST /deploy-edge-function). */
-export async function deployEdgeFunction(
-  functionName: string,
-  code: string,
-  supabaseDir?: string,
-): Promise<{ ok: boolean; message?: string; error?: string; path?: string }> {
-  const res = await authFetch(`${baseUrl()}/deploy-edge-function`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ functionName, code, supabaseDir }),
-    signal: AbortSignal.timeout(30000),
-  });
-  return await res.json();
-}
-
 /** Fetch real upstream DNS latency results from the bridge (GET /ping). */
 export async function fetchPingResults(): Promise<PingServerResult[]> {
   const res = await authFetch(`${baseUrl()}/ping`, { signal: AbortSignal.timeout(8000) });
