@@ -1,12 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, HardDrive, Wifi, LogIn, ExternalLink, RefreshCw } from "lucide-react";
+import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, LogIn, ExternalLink, RefreshCw } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { useBridgeUrl, getBridgeHeaders, getBridgeUrl, getBridgeApiKey, setBridgeUrl, setBridgeApiKey, setDbConfig } from "@/hooks/use-bridge-url";
+import { useBridgeUrl, getBridgeHeaders, getBridgeUrl, getBridgeApiKey, setBridgeUrl, setBridgeApiKey } from "@/hooks/use-bridge-url";
 import { saveOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
 import { setLocalAdminEnabled as persistLocalAdminEnabled, hashPassword, setAdminPasswordHash, getAdminPasswordHash } from "@/hooks/use-local-admin";
 import { User } from "@supabase/supabase-js";
-import { fetchBridgeSettings, saveBridgeSettings, type AppSettings } from "@/lib/unbound-bridge";
+import { supabase } from "@/integrations/supabase/client";
+import { Json } from "@/integrations/supabase/types";
+
+// ── System user ID for settings (no Supabase auth needed) ─────────────────────
+const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 interface EndpointResult {
   path: string;
@@ -67,22 +71,74 @@ function generateToken(): string {
   return prefix + result;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// ── Settings shape ────────────────────────────────────────────────────────────
+interface AppSettings {
+  bridge_url?: string | null;
+  bridge_api_key?: string | null;
+  okta_domain?: string | null;
+  okta_client_id?: string | null;
+  okta_client_secret?: string | null;
+  okta_enabled?: boolean;
+  api_tokens?: Json | null;
+  log_retention?: string;
+  log_rotation?: string;
+  log_max_size?: string;
+  notify_blocked?: boolean;
+  notify_service?: boolean;
+}
 
-async function loadSettingsFromBridge(): Promise<AppSettings | null> {
+// ── Supabase helpers ──────────────────────────────────────────────────────────
+
+async function loadSettingsFromSupabase(): Promise<AppSettings | null> {
   try {
-    return await fetchBridgeSettings();
+    const { data, error } = await supabase
+      .from("user_settings")
+      .select("*")
+      .eq("user_id", SYSTEM_USER_ID)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      bridge_url: data.bridge_url,
+      bridge_api_key: data.bridge_api_key,
+      okta_domain: data.okta_domain,
+      okta_client_id: data.okta_client_id,
+      okta_client_secret: data.okta_client_secret,
+      okta_enabled: data.okta_enabled,
+      api_tokens: data.api_tokens,
+      log_retention: data.log_retention,
+      log_rotation: data.log_rotation,
+      log_max_size: data.log_max_size,
+      notify_blocked: data.notify_blocked,
+      notify_service: data.notify_service,
+    };
   } catch {
     return null;
   }
 }
 
-async function saveSettingsToBridge(patch: AppSettings): Promise<boolean> {
+async function saveSettingsToSupabase(patch: AppSettings): Promise<boolean> {
   try {
-    await saveBridgeSettings(patch);
-    return true;
-  } catch (e: unknown) {
-    console.error("Bridge save failed:", e);
+    // First check if a row exists
+    const { data: existing } = await supabase
+      .from("user_settings")
+      .select("id")
+      .eq("user_id", SYSTEM_USER_ID)
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await supabase
+        .from("user_settings")
+        .update(patch)
+        .eq("user_id", SYSTEM_USER_ID);
+      return !error;
+    } else {
+      const { error } = await supabase
+        .from("user_settings")
+        .insert([{ user_id: SYSTEM_USER_ID, ...patch }]);
+      return !error;
+    }
+  } catch (e) {
+    console.error("Supabase save failed:", e);
     return false;
   }
 }
@@ -101,17 +157,6 @@ export default function SettingsPage({ user }: { user: User | null }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
-
-  // Database config state
-  const [dbType, setDbType] = useState("local");
-  const [dbHost, setDbHost] = useState("");
-  const [dbPort, setDbPort] = useState("5432");
-  const [dbName, setDbName] = useState("");
-  const [dbUser, setDbUser] = useState("");
-  const [dbPassword, setDbPassword] = useState("");
-  const [showDbPassword, setShowDbPassword] = useState(false);
-  const [dbTesting, setDbTesting] = useState(false);
-  const [dbTestResult, setDbTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   // Okta state
   const [oktaDomain, setOktaDomain] = useState("");
@@ -180,7 +225,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null);
 
-  // ── Load all settings from bridge/SQLite on mount ─────────────────────────
+  // ── Load all settings from Supabase on mount ─────────────────────────────
   const applySettings = useCallback((s: AppSettings) => {
     if (s.okta_domain)        setOktaDomain(s.okta_domain);
     if (s.okta_client_id)     setOktaClientId(s.okta_client_id);
@@ -200,16 +245,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
     if (s.notify_blocked !== undefined) setNotifyBlocked(!!s.notify_blocked);
     if (s.notify_service !== undefined) setNotifyService(!!s.notify_service);
 
-    const t = s.db_type || "local";
-    const h = s.db_host || "";
-    const p = s.db_port || "5432";
-    const n = s.db_name || "";
-    const u = s.db_user || "";
-    const pw = s.db_password || "";
-    setDbType(t); setDbHost(h); setDbPort(p); setDbName(n); setDbUser(u); setDbPassword(pw);
-    setDbConfig({ db_type: t, db_host: h || null, db_port: p || null, db_name: n || null, db_user: u || null, db_password: pw || null });
-
-    // Bridge URL/key come from the bridge settings (override localStorage)
+    // Bridge URL/key come from settings
     if (s.bridge_url)     { setBridgeUrl(s.bridge_url);    setBridgeUrlState(s.bridge_url);    setBridgeInput(s.bridge_url); }
     if (s.bridge_api_key) { setBridgeApiKey(s.bridge_api_key); setBridgeApiKeyState(s.bridge_api_key); setApiKeyInput(s.bridge_api_key); }
     if (s.api_tokens) {
@@ -217,37 +253,32 @@ export default function SettingsPage({ user }: { user: User | null }) {
     }
   }, [setBridgeUrlState, setBridgeApiKeyState]);
 
-  const fetchFromBridge = useCallback(async () => {
+  const fetchSettings = useCallback(async () => {
     setLoadingSettings(true);
     setLoadError(null);
-    const s = await loadSettingsFromBridge();
+    const s = await loadSettingsFromSupabase();
     if (s) {
       applySettings(s);
     } else {
-      setLoadError("Could not load settings from bridge. Make sure the bridge is running and the URL is correct.");
+      setLoadError("Could not load settings from Supabase. Check your local Supabase instance is running.");
     }
     setLoadingSettings(false);
   }, [applySettings]);
 
   useEffect(() => {
-    // Only load from bridge if bridge URL is set
-    if (getBridgeUrl() && getBridgeUrl() !== "http://localhost:8080") {
-      fetchFromBridge();
-    } else {
-      setLoadingSettings(false);
-    }
+    fetchSettings();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Persist to bridge/SQLite ──────────────────────────────────────────────
-  const saveToBridge = useCallback(async (patch: AppSettings): Promise<boolean> => {
-    const ok = await saveSettingsToBridge(patch);
-    if (!ok) toast({ title: "Save failed", description: "Could not reach the bridge. Check the bridge URL and try again.", variant: "destructive" });
+  // ── Persist to Supabase ──────────────────────────────────────────────────
+  const saveToSupabase = useCallback(async (patch: AppSettings): Promise<boolean> => {
+    const ok = await saveSettingsToSupabase(patch);
+    if (!ok) toast({ title: "Save failed", description: "Could not save to Supabase. Check your local Supabase instance.", variant: "destructive" });
     return ok;
   }, []);
 
   const exportConfig = () => {
     const config: Record<string, unknown> = {
-      _version: 2,
+      _version: 3,
       _exportedAt: new Date().toISOString(),
       bridge_url: bridgeInput,
       bridge_api_key: apiKeyInput,
@@ -261,12 +292,6 @@ export default function SettingsPage({ user }: { user: User | null }) {
       log_max_size: maxLogSize,
       notify_blocked: notifyBlocked,
       notify_service: notifyService,
-      db_type: dbType,
-      db_host: dbHost,
-      db_port: dbPort,
-      db_name: dbName,
-      db_user: dbUser,
-      db_password: dbPassword,
     };
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -298,16 +323,10 @@ export default function SettingsPage({ user }: { user: User | null }) {
           log_max_size: parsed.log_max_size || "500",
           notify_blocked: parsed.notify_blocked ?? true,
           notify_service: parsed.notify_service ?? true,
-          db_type: parsed.db_type || "local",
-          db_host: parsed.db_host || null,
-          db_port: parsed.db_port || null,
-          db_name: parsed.db_name || null,
-          db_user: parsed.db_user || null,
-          db_password: parsed.db_password || null,
         };
         applySettings(payload);
-        const ok = await saveToBridge(payload);
-        if (ok) toast({ title: "Config imported", description: "Settings restored and saved to SQLite on your VM." });
+        const ok = await saveToSupabase(payload);
+        if (ok) toast({ title: "Config imported", description: "Settings restored and saved to Supabase." });
       } catch {
         setImportError("Invalid config file — make sure you're using a file exported from DNS Shield.");
       }
@@ -328,12 +347,10 @@ export default function SettingsPage({ user }: { user: User | null }) {
     // 1. Update localStorage so subsequent bridge calls use the new URL/key immediately
     setBridgeUrlState(bridgeInput);
     setBridgeApiKeyState(apiKeyInput);
-    // 2. Persist to SQLite via the bridge itself
-    const ok = await saveToBridge({ bridge_url: bridgeInput || null, bridge_api_key: apiKeyInput || null });
+    // 2. Persist to Supabase
+    const ok = await saveToSupabase({ bridge_url: bridgeInput || null, bridge_api_key: apiKeyInput || null });
     if (ok) {
-      toast({ title: "Bridge settings saved", description: "Connection settings saved to SQLite on your VM." });
-      // 3. Load remaining settings now that we have a working bridge
-      fetchFromBridge();
+      toast({ title: "Bridge settings saved", description: "Connection settings saved to Supabase." });
     }
   };
 
@@ -464,7 +481,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
 
   const persistTokens = async (updated: ApiToken[]) => {
     setTokens(updated);
-    await saveToBridge({ api_tokens: updated as unknown as AppSettings["api_tokens"] });
+    await saveToSupabase({ api_tokens: updated as unknown as AppSettings["api_tokens"] });
   };
 
   const createToken = async () => {
@@ -487,12 +504,12 @@ export default function SettingsPage({ user }: { user: User | null }) {
     setNewTokenExpiry("90");
     setShowCreateToken(false);
     setTimeout(() => setJustCreatedToken(null), 10000);
-    toast({ title: "Token created", description: "API token saved to SQLite on your VM." });
+    toast({ title: "Token created", description: "API token saved to Supabase." });
   };
 
   const revokeToken = async (id: string) => {
     await persistTokens(tokens.filter((t) => t.id !== id));
-    toast({ title: "Token revoked", description: "API token removed from SQLite on your VM." });
+    toast({ title: "Token revoked", description: "API token removed." });
   };
 
   const copyToken = (id: string, token: string) => {
@@ -518,12 +535,12 @@ export default function SettingsPage({ user }: { user: User | null }) {
       <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary/5 border border-primary/20 text-xs text-primary">
         <Database className="h-3.5 w-3.5 shrink-0" />
         <span className="flex-1">
-          All settings are stored in <code className="font-mono bg-primary/10 px-1 rounded">/var/lib/dnsguard/dnsguard.db</code> on your VM via the bridge.
+          All settings are stored in your local Supabase instance.
         </span>
         {loadingSettings ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
         ) : (
-          <button onClick={fetchFromBridge} className="flex items-center gap-1 hover:opacity-70 transition-opacity">
+          <button onClick={fetchSettings} className="flex items-center gap-1 hover:opacity-70 transition-opacity">
             <RefreshCw className="h-3.5 w-3.5" /> Reload
           </button>
         )}
@@ -532,7 +549,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
       {loadError && (
         <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-warning/5 border border-warning/20 text-xs text-warning">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span>{loadError} Settings shown are defaults until the bridge is reachable.</span>
+          <span>{loadError} Settings shown are defaults until Supabase is reachable.</span>
         </div>
       )}
 
@@ -543,8 +560,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
           <h3 className="text-sm font-semibold">Unbound Bridge Connection</h3>
         </div>
         <p className="text-xs text-muted-foreground mb-4">
-          URL of the HTTP bridge running on your GCP VM alongside Unbound. All settings are persisted to{" "}
-          <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/var/lib/dnsguard/dnsguard.db</code> via this bridge.
+          URL of the HTTP bridge running on your GCP VM alongside Unbound. Used for operational tasks (stats, logs, rules).
           Use your VM's public IP (e.g.{" "}
           <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">http://1.2.3.4/api</code>) or{" "}
           <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">http://localhost:8080</code> if the browser runs on the same machine.
@@ -673,13 +689,13 @@ export default function SettingsPage({ user }: { user: User | null }) {
               const cfg = { domain: oktaDomain.trim(), clientId: oktaClientId.trim(), clientSecret: oktaSecret.trim() || undefined, enabled: true };
               setOktaEnabled(true);
               saveOktaConfig(cfg);
-              const ok = await saveToBridge({
+              const ok = await saveToSupabase({
                 okta_domain: oktaDomain.trim(),
                 okta_client_id: oktaClientId.trim(),
                 okta_client_secret: oktaSecret.trim() || null,
                 okta_enabled: true,
               });
-              if (ok) toast({ title: "Okta SSO saved", description: "Saved to SQLite on your VM. SSO is now active." });
+              if (ok) toast({ title: "Okta SSO saved", description: "Saved to Supabase. SSO is now active." });
             }}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
           >
@@ -809,7 +825,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
                 onClick={async () => {
                   setOktaEnabled(false);
                   saveOktaConfig({ domain: oktaDomain, clientId: oktaClientId, clientSecret: oktaSecret || undefined, enabled: false });
-                  await saveToBridge({ okta_enabled: false });
+                  await saveToSupabase({ okta_enabled: false });
                   toast({ title: "Okta disabled", description: "SSO has been disabled." });
                 }}
                 className="text-[11px] text-muted-foreground hover:text-destructive transition-colors ml-4 shrink-0"
@@ -987,7 +1003,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
             <Plus className="h-3.5 w-3.5" /> Create Token
           </button>
         </div>
-        <p className="text-xs text-muted-foreground mb-4">Generate tokens for API authentication. Tokens are persisted to SQLite on your VM.</p>
+        <p className="text-xs text-muted-foreground mb-4">Generate tokens for API authentication. Tokens are persisted to Supabase.</p>
 
         <AnimatePresence>
           {showCreateToken && (
@@ -1111,8 +1127,8 @@ export default function SettingsPage({ user }: { user: User | null }) {
           <div className="flex justify-end">
             <button
               onClick={async () => {
-                const ok = await saveToBridge({ log_retention: logRetention, log_rotation: logRotation, log_max_size: maxLogSize });
-                if (ok) toast({ title: "Log settings saved", description: "Saved to SQLite on your VM." });
+                const ok = await saveToSupabase({ log_retention: logRetention, log_rotation: logRotation, log_max_size: maxLogSize });
+                if (ok) toast({ title: "Log settings saved", description: "Saved to Supabase." });
               }}
               className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
             >
@@ -1131,8 +1147,8 @@ export default function SettingsPage({ user }: { user: User | null }) {
         <p className="text-xs text-muted-foreground mb-6">Alert preferences for DNS events.</p>
         <div className="space-y-3">
           {[
-            { label: "High blocked query volume alerts", key: "notify_blocked", checked: notifyBlocked, onChange: async (v: boolean) => { setNotifyBlocked(v); await saveToBridge({ notify_blocked: v }); } },
-            { label: "Service status change alerts", key: "notify_service", checked: notifyService, onChange: async (v: boolean) => { setNotifyService(v); await saveToBridge({ notify_service: v }); } },
+            { label: "High blocked query volume alerts", key: "notify_blocked", checked: notifyBlocked, onChange: async (v: boolean) => { setNotifyBlocked(v); await saveToSupabase({ notify_blocked: v }); } },
+            { label: "Service status change alerts", key: "notify_service", checked: notifyService, onChange: async (v: boolean) => { setNotifyService(v); await saveToSupabase({ notify_service: v }); } },
           ].map((item) => (
             <label key={item.key} className="flex items-center justify-between cursor-pointer group">
               <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">{item.label}</span>
@@ -1144,210 +1160,6 @@ export default function SettingsPage({ user }: { user: User | null }) {
         </div>
       </motion.div>
 
-      {/* Database Configuration */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }} className="bg-card border border-border rounded-lg p-6">
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-2">
-            <Database className="h-4 w-4 text-primary" />
-            <h3 className="text-sm font-semibold">Bridge Database Configuration</h3>
-            <span className={`px-2 py-0.5 rounded text-[10px] border ml-2 ${dbType === "remote" ? "bg-primary/10 text-primary border-primary/20" : "bg-muted text-muted-foreground border-border"}`}>
-              {dbType === "remote" ? "Remote PostgreSQL" : "Local SQLite"}
-            </span>
-          </div>
-          <button
-            onClick={async () => {
-              const cfg = {
-                db_type: dbType,
-                db_host: dbType === "remote" ? dbHost || null : null,
-                db_port: dbType === "remote" ? dbPort || null : null,
-                db_name: dbType === "remote" ? dbName || null : null,
-                db_user: dbType === "remote" ? dbUser || null : null,
-                db_password: dbType === "remote" ? dbPassword || null : null,
-              };
-              setDbConfig(cfg);
-              const ok = await saveToBridge(cfg);
-              if (ok) toast({ title: "Database config saved", description: "Bridge will use this database on your VM." });
-            }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
-          >
-            <Save className="h-3.5 w-3.5" /> Save
-          </button>
-        </div>
-        <p className="text-xs text-muted-foreground mb-5">
-          Tell the bridge which database to use on your GCP VM. Local SQLite is at{" "}
-          <code className="font-mono text-[11px] bg-muted px-1 py-0.5 rounded">/var/lib/dnsguard/dnsguard.db</code>.
-        </p>
-
-        <div className="flex gap-3 mb-5">
-          <button
-            onClick={() => { setDbType("local"); setDbTestResult(null); }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-xs font-medium transition-colors ${dbType === "local" ? "bg-primary/10 text-primary border-primary/30" : "bg-muted text-muted-foreground border-border hover:text-foreground"}`}
-          >
-            <HardDrive className="h-3.5 w-3.5" /> Local SQLite
-          </button>
-          <button
-            onClick={() => { setDbType("remote"); setDbTestResult(null); }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-xs font-medium transition-colors ${dbType === "remote" ? "bg-primary/10 text-primary border-primary/30" : "bg-muted text-muted-foreground border-border hover:text-foreground"}`}
-          >
-            <Wifi className="h-3.5 w-3.5" /> Remote PostgreSQL
-          </button>
-        </div>
-
-        <AnimatePresence>
-          {dbType === "local" && (
-            <motion.div key="local" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border">
-                <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
-                <div className="flex-1">
-                  <p className="text-xs text-muted-foreground">
-                    Bridge will use <code className="font-mono text-[11px] bg-muted px-1 rounded">/var/lib/dnsguard/dnsguard.db</code> on your GCP VM. No additional configuration required.
-                  </p>
-                </div>
-                <button
-                  onClick={async () => {
-                    const base = bridgeInput.replace(/\/$/, "");
-                    if (!base) {
-                      toast({ title: "Bridge URL required", description: "Set the bridge URL first.", variant: "destructive" });
-                      return;
-                    }
-                    setDbTesting(true);
-                    setDbTestResult(null);
-                    const start = Date.now();
-                    try {
-                      const res = await fetch(`${base}/db/ping`, {
-                        method: "POST",
-                        headers: { ...getBridgeHeaders(), "Content-Type": "application/json" },
-                        body: JSON.stringify({ type: "local" }),
-                        signal: AbortSignal.timeout(8000),
-                      });
-                      const latency = Date.now() - start;
-                      if (res.ok) {
-                        setDbTestResult({ ok: true, message: `SQLite reachable at /var/lib/dnsguard/dnsguard.db in ${latency}ms.` });
-                      } else if (res.status === 404) {
-                        setDbTestResult({ ok: false, message: "Bridge /db/ping not found — update your bridge script to v1.2+." });
-                      } else {
-                        const body = await res.json().catch(() => ({}));
-                        setDbTestResult({ ok: false, message: body?.error ?? `Bridge returned HTTP ${res.status}.` });
-                      }
-                    } catch (e: unknown) {
-                      const isTimeout = e instanceof Error && e.name === "TimeoutError";
-                      setDbTestResult({ ok: false, message: isTimeout ? "Timeout — bridge unreachable." : "Could not reach the bridge." });
-                    } finally {
-                      setDbTesting(false);
-                    }
-                  }}
-                  disabled={dbTesting}
-                  className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 shrink-0"
-                >
-                  {dbTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {dbTesting ? "Testing…" : "Test Database"}
-                </button>
-              </div>
-              <AnimatePresence>
-                {dbTestResult && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                    className={`flex items-start gap-2 p-3 rounded-lg border text-xs ${dbTestResult.ok ? "bg-success/5 border-success/20 text-success" : "bg-destructive/5 border-destructive/20 text-destructive"}`}
-                  >
-                    {dbTestResult.ok ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" /> : <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />}
-                    <span>{dbTestResult.message}</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          )}
-          {dbType === "remote" && (
-            <motion.div key="remote" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-2">
-                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">Host</label>
-                  <input value={dbHost} onChange={(e) => setDbHost(e.target.value)} placeholder="db.example.com or 192.168.1.10" className={inputClass} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">Port</label>
-                  <input value={dbPort} onChange={(e) => setDbPort(e.target.value)} placeholder="5432" className={inputClass} />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1.5">Database Name</label>
-                <input value={dbName} onChange={(e) => setDbName(e.target.value)} placeholder="dnsguard" className={inputClass} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">Username</label>
-                  <input value={dbUser} onChange={(e) => setDbUser(e.target.value)} placeholder="postgres" className={inputClass} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">Password</label>
-                  <div className="relative">
-                    <input type={showDbPassword ? "text" : "password"} value={dbPassword} onChange={(e) => setDbPassword(e.target.value)} placeholder="••••••••" className={inputClass + " pr-8"} />
-                    <button onClick={() => setShowDbPassword((v) => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                      {showDbPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={async () => {
-                    if (!dbHost.trim()) {
-                      toast({ title: "Missing host", description: "Enter a database host before testing.", variant: "destructive" });
-                      return;
-                    }
-                    const base = bridgeInput.replace(/\/$/, "");
-                    if (!base) {
-                      toast({ title: "Bridge URL required", description: "Set the bridge URL first.", variant: "destructive" });
-                      return;
-                    }
-                    setDbTesting(true);
-                    setDbTestResult(null);
-                    const start = Date.now();
-                    try {
-                      const res = await fetch(`${base}/db/ping`, {
-                        method: "POST",
-                        headers: { ...getBridgeHeaders(), "Content-Type": "application/json" },
-                        body: JSON.stringify({ host: dbHost, port: dbPort || "5432", database: dbName, user: dbUser, password: dbPassword }),
-                        signal: AbortSignal.timeout(8000),
-                      });
-                      const latency = Date.now() - start;
-                      if (res.ok) {
-                        setDbTestResult({ ok: true, message: `Connected to PostgreSQL at ${dbHost}:${dbPort || "5432"} in ${latency}ms.` });
-                      } else if (res.status === 404) {
-                        setDbTestResult({ ok: false, message: "Bridge /db/ping not found — update bridge script to v1.2+." });
-                      } else {
-                        const body = await res.json().catch(() => ({}));
-                        setDbTestResult({ ok: false, message: body?.error ?? `Bridge returned HTTP ${res.status}.` });
-                      }
-                    } catch (e: unknown) {
-                      const isTimeout = e instanceof Error && e.name === "TimeoutError";
-                      setDbTestResult({ ok: false, message: isTimeout ? "Timeout — bridge or DB unreachable." : "Could not reach the bridge." });
-                    } finally {
-                      setDbTesting(false);
-                    }
-                  }}
-                  disabled={dbTesting}
-                  className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                >
-                  {dbTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {dbTesting ? "Testing…" : "Test Database"}
-                </button>
-              </div>
-              <AnimatePresence>
-                {dbTestResult && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                    className={`flex items-start gap-2 p-3 rounded-lg border text-xs ${dbTestResult.ok ? "bg-success/5 border-success/20 text-success" : "bg-destructive/5 border-destructive/20 text-destructive"}`}
-                  >
-                    {dbTestResult.ok ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" /> : <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />}
-                    <span>{dbTestResult.message}</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-
       {/* Import / Export Config */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-card border border-border rounded-lg p-6">
         <div className="flex items-center gap-2 mb-1">
@@ -1355,7 +1167,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
           <h3 className="text-sm font-semibold">Backup &amp; Restore</h3>
         </div>
         <p className="text-xs text-muted-foreground mb-5">
-          Export your configuration as JSON. Import it to restore all settings — they will be saved directly to SQLite on your VM via the bridge.
+          Export your configuration as JSON. Import it to restore all settings — they will be saved to Supabase.
         </p>
 
         <div className="flex items-center gap-3">
@@ -1394,7 +1206,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
         )}
 
         <p className="text-[11px] text-muted-foreground mt-3">
-          Exported file contains: bridge URL, API key, Okta config, log settings, and DB config. API tokens are included when exported.
+          Exported file contains: bridge URL, API key, Okta config, log settings, and notification preferences. API tokens are included when exported.
         </p>
       </motion.div>
     </div>
