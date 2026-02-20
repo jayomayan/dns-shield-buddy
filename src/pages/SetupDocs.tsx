@@ -7,7 +7,7 @@ import {
   ExternalLink, Copy, Check, Monitor, Layers, HardDrive,
 } from "lucide-react";
 
-type Section = "setup" | "bridge" | "walkthrough" | "architecture" | "api" | "okta" | "database" | "faq";
+type Section = "setup" | "bridge" | "walkthrough" | "architecture" | "api" | "okta" | "database" | "selfhosted" | "faq";
 
 const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: "setup", label: "Setup Guide", icon: Download },
@@ -17,6 +17,7 @@ const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: "api", label: "API Reference", icon: Terminal },
   { id: "okta", label: "Okta SSO", icon: Key },
   { id: "database", label: "Database Setup", icon: Database },
+  { id: "selfhosted", label: "Self-Hosted Supabase", icon: Server },
   { id: "faq", label: "FAQ", icon: FileText },
 ];
 
@@ -2089,8 +2090,218 @@ export default function SetupDocs() {
           </div>
         )}
 
-        {/* ─── FAQ ─── */}
+        {/* ─── Self-Hosted Supabase Migration ─── */}
+        {activeSection === "selfhosted" && (
+          <div className="space-y-6">
+            <div className="bg-card border border-border rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-3">
+                <Server className="h-5 w-5 text-primary" />
+                <h2 className="text-base font-semibold">Self-Hosted Supabase Migration</h2>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+                Run the entire DNSGuard stack — including authentication, database, storage, and realtime — on a <strong className="text-foreground">single GCP VM</strong> using self-hosted Supabase via Docker. No external cloud endpoints required.
+              </p>
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20 text-xs text-primary">
+                <Zap className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span>After migration, the application works fully offline — no internet access needed for auth, database, or API operations.</span>
+              </div>
+            </div>
 
+            {/* .env Template */}
+            <div className="bg-card border border-border rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <FileText className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">.env File Template</h3>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+                Create or update the <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">.env</code> file in your project root on the VM. Replace placeholder values with your local Supabase keys.
+              </p>
+              <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`# ─── Self-Hosted Supabase .env ───────────────────────────────
+# All services run locally on the same VM — no external URLs.
+
+# Kong API gateway (default Supabase port)
+VITE_SUPABASE_URL=http://localhost:8000
+
+# Anon (publishable) key — find in your docker/.env or
+# supabase/docker/.env under ANON_KEY
+VITE_SUPABASE_PUBLISHABLE_KEY=your-local-anon-key-here
+
+# Project ID — use "local" for self-hosted
+VITE_SUPABASE_PROJECT_ID=local
+
+# ─── Where to find your keys ─────────────────────────────────
+# 1. cd into your supabase docker directory
+# 2. cat .env | grep ANON_KEY
+# 3. cat .env | grep SERVICE_ROLE_KEY  (for edge functions)
+# 4. The JWT secret is in SUPABASE_AUTH_JWT_SECRET`}</pre>
+            </div>
+
+            {/* Migration steps */}
+            <div className="bg-card border border-border rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <Terminal className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">Migration Steps</h3>
+              </div>
+              {[
+                { num: "01", title: "Install self-hosted Supabase", body: (
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`# Clone the Supabase Docker setup
+git clone --depth 1 https://github.com/supabase/supabase
+cd supabase/docker
+
+# Copy the example env and configure
+cp .env.example .env
+nano .env   # Set POSTGRES_PASSWORD, JWT_SECRET, ANON_KEY, SERVICE_ROLE_KEY
+
+# Start all services
+docker compose pull
+docker compose up -d
+
+# Verify services are running
+docker compose ps
+curl -s http://localhost:8000/rest/v1/ -H "apikey: YOUR_ANON_KEY"`}</pre>
+                  </div>
+                )},
+                { num: "02", title: "Apply database migrations", body: (
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`# Connect to the local Supabase PostgreSQL instance
+# Default port is 5432, user is "postgres"
+psql -h localhost -p 5432 -U postgres -d postgres
+
+# Apply all DNSGuard migrations (from your project directory)
+for f in supabase/migrations/*.sql; do
+  echo "Applying $f ..."
+  psql -h localhost -p 5432 -U postgres -d postgres -f "$f"
+done
+
+# Verify tables exist
+psql -h localhost -p 5432 -U postgres -d postgres \\
+  -c "\\dt public.*"
+# Expected: user_settings (and any other project tables)`}</pre>
+                  </div>
+                )},
+                { num: "03", title: "Rebuild the app with local .env", body: (
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>The Supabase client reads from environment variables at build time. No code changes needed — just rebuild:</p>
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`# From your project directory on the VM:
+npm run build
+
+# The built files in dist/ will use http://localhost:8000
+# as the Supabase URL automatically.
+
+# Serve with your preferred web server (nginx, caddy, etc.)
+# Example with a simple static server:
+npx serve dist -l 3000`}</pre>
+                  </div>
+                )},
+                { num: "04", title: "Configure authentication", body: (
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>Self-hosted GoTrue handles auth at <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">http://localhost:8000/auth/v1/</code>. Update your Supabase Docker <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">.env</code>:</p>
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`# In supabase/docker/.env
+SITE_URL=http://your-vm-ip-or-domain
+ADDITIONAL_REDIRECT_URLS=http://your-vm-ip-or-domain/auth/callback
+
+# Restart auth service after changes
+docker compose restart auth`}</pre>
+                  </div>
+                )},
+                { num: "05", title: "Verify all services with curl", body: (
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <pre className="bg-muted rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{`# 1. REST API
+curl -s http://localhost:8000/rest/v1/ \\
+  -H "apikey: YOUR_ANON_KEY" | head -c 200
+
+# 2. Auth health
+curl -s http://localhost:8000/auth/v1/health
+# → {"status":"ok"}
+
+# 3. Storage buckets
+curl -s http://localhost:8000/storage/v1/bucket \\
+  -H "apikey: YOUR_ANON_KEY" \\
+  -H "Authorization: Bearer YOUR_ANON_KEY"
+
+# 4. PostgreSQL direct
+psql -h localhost -p 5432 -U postgres -d postgres \\
+  -c "SELECT count(*) FROM user_settings;"
+
+# 5. CRUD test — insert & read
+curl -s -X POST http://localhost:8000/rest/v1/user_settings \\
+  -H "apikey: YOUR_ANON_KEY" \\
+  -H "Authorization: Bearer YOUR_SERVICE_ROLE_KEY" \\
+  -H "Content-Type: application/json" \\
+  -H "Prefer: return=representation" \\
+  -d '{"user_id":"00000000-0000-0000-0000-000000000001","log_retention":"30"}'
+
+curl -s http://localhost:8000/rest/v1/user_settings?limit=1 \\
+  -H "apikey: YOUR_ANON_KEY" \\
+  -H "Authorization: Bearer YOUR_SERVICE_ROLE_KEY"`}</pre>
+                  </div>
+                )},
+              ].map((step) => (
+                <div key={step.num} className="mb-5 last:mb-0">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-muted border border-border text-[10px] font-bold font-mono text-foreground shrink-0">{step.num}</span>
+                    <h4 className="text-xs font-semibold text-foreground">{step.title}</h4>
+                  </div>
+                  {step.body}
+                </div>
+              ))}
+            </div>
+
+            {/* Checklist */}
+            <div className="bg-card border border-border rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <CheckCircle2 className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">Migration Checklist</h3>
+              </div>
+              <div className="space-y-2">
+                {[
+                  { service: "REST API", endpoint: "http://localhost:8000/rest/v1/", check: "Returns table list with anon key" },
+                  { service: "Auth (GoTrue)", endpoint: "http://localhost:8000/auth/v1/health", check: "Returns {\"status\":\"ok\"}" },
+                  { service: "Realtime", endpoint: "ws://localhost:8000/realtime/v1/websocket", check: "WebSocket connects" },
+                  { service: "Storage", endpoint: "http://localhost:8000/storage/v1/bucket", check: "Returns [] or bucket list" },
+                  { service: "PostgreSQL", endpoint: "localhost:5432", check: "psql connects, tables exist" },
+                  { service: ".env updated", endpoint: "VITE_SUPABASE_URL=http://localhost:8000", check: "No external URLs remain" },
+                  { service: "App rebuilt", endpoint: "npm run build", check: "dist/ uses local endpoints" },
+                  { service: "Auth redirect", endpoint: "SITE_URL + ADDITIONAL_REDIRECT_URLS", check: "Points to VM IP/domain" },
+                ].map((row) => (
+                  <div key={row.service} className="flex items-start gap-3 p-3 rounded-lg bg-muted/40 border border-border">
+                    <Circle className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-foreground">{row.service}</p>
+                      <code className="text-[10px] font-mono text-muted-foreground break-all">{row.endpoint}</code>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">✓ {row.check}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Troubleshooting */}
+            <div className="bg-card border border-border rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <AlertTriangle className="h-4 w-4 text-warning" />
+                <h3 className="text-sm font-semibold">Troubleshooting</h3>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { q: "Auth returns 500 or \"Invalid JWT\"", a: "Ensure ANON_KEY in your .env matches the one in supabase/docker/.env. They must use the same JWT_SECRET." },
+                  { q: "CORS errors in browser", a: "Add your VM's URL to ADDITIONAL_REDIRECT_URLS and set API_EXTERNAL_URL in the Supabase Docker .env." },
+                  { q: "Cannot connect to PostgreSQL", a: "Check that port 5432 is not blocked. For local-only, bind to 127.0.0.1 in postgresql.conf." },
+                  { q: "Realtime not connecting", a: "Ensure the realtime container is running: docker compose ps. Check logs: docker compose logs realtime." },
+                  { q: "Storage uploads fail", a: "Create a storage bucket first via the API or SQL. Check: docker compose logs storage." },
+                ].map((item) => (
+                  <div key={item.q} className="p-3 rounded-lg bg-muted/40 border border-border">
+                    <p className="text-xs font-semibold text-foreground mb-1">{item.q}</p>
+                    <p className="text-[11px] text-muted-foreground">{item.a}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── FAQ ─── */}
 
         {activeSection === "faq" && (
           <div className="space-y-2">
