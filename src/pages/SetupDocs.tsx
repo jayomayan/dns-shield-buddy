@@ -196,6 +196,62 @@ tail -f /var/log/unbound/unbound.log`,
   },
   {
     id: "s8",
+    title: "Install Self-Hosted Supabase (Optional)",
+    description: "Deploy your own Supabase instance for fully self-hosted settings storage and authentication.",
+    command: `# ── Prerequisites ────────────────────────────────────────────────
+# Docker & Docker Compose v2 required
+sudo apt install -y docker.io docker-compose-v2
+sudo systemctl enable docker && sudo systemctl start docker
+
+# ── Clone Supabase Docker repo ──────────────────────────────────
+git clone --depth 1 https://github.com/supabase/supabase
+cd supabase/docker
+
+# ── Configure environment ───────────────────────────────────────
+cp .env.example .env
+
+# IMPORTANT: Edit .env and change these values:
+#   POSTGRES_PASSWORD=<strong-random-password>
+#   JWT_SECRET=<random-string-min-32-chars>
+#   ANON_KEY=<generate-from-jwt-secret>
+#   SERVICE_ROLE_KEY=<generate-from-jwt-secret>
+#   SITE_URL=https://your-dnsguard-domain
+#   API_EXTERNAL_URL=https://your-supabase-domain
+#
+# Generate JWT keys at: https://supabase.com/docs/guides/self-hosting#api-keys
+
+nano .env
+
+# ── Start Supabase ──────────────────────────────────────────────
+sudo docker compose up -d
+
+# Verify all containers are running
+sudo docker compose ps
+
+# ── Apply DNSGuard migration ────────────────────────────────────
+# Download the migration SQL from:
+#   DNSGuard → Settings → Backend Mode → Self-Hosted → Export SQL
+# Then run it against your Supabase Postgres:
+psql "postgresql://postgres:<your-password>@localhost:5432/postgres" \\
+     -f dnsguard-migration.sql
+
+# ── Verify the table was created ────────────────────────────────
+psql "postgresql://postgres:<your-password>@localhost:5432/postgres" \\
+     -c "SELECT count(*) FROM public.user_settings;"`,
+    details: [
+      "Self-hosted Supabase gives you full control over your data and authentication",
+      "Requires Docker and Docker Compose v2 installed on the server",
+      "Default Supabase Studio is accessible at http://localhost:8000 (secure with a reverse proxy)",
+      "After starting, note your Supabase URL (http://localhost:8000) and Anon Key from .env",
+      "In DNSGuard → Settings → Backend Mode, switch to Self-Hosted and enter the URL + Anon Key",
+      "Use the 'Export SQL' button to download the migration file needed for the user_settings table",
+      "Enable email auth in Supabase Studio → Authentication → Providers if you want Supabase-based login",
+      "For production: put Supabase behind nginx/caddy with TLS and restrict Studio access",
+    ],
+    warning: "Change ALL default passwords and JWT secrets in .env before starting. Never expose Supabase Studio to the public internet without authentication.",
+  },
+  {
+    id: "s9",
     title: "Verify & Test",
     description: "Confirm everything is working correctly.",
     command: `# Test DNS resolution
@@ -219,6 +275,7 @@ dig @<server-ip> google.com`,
       "Check DNSSEC validation with known-good and known-bad domains",
       "Monitor the Dashboard for incoming query statistics",
       "Test from client machines after pointing their DNS to this server",
+      "If using self-hosted Supabase: verify settings sync by switching backend mode and saving a change",
     ],
   },
 ];
