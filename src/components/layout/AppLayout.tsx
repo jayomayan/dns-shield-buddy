@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Shield, FileText, Settings, Server, Zap, BookOpen,
-  Activity, ChevronLeft, ChevronRight, Globe, LogOut, Sun, Moon, Monitor,
+  Activity, ChevronLeft, ChevronRight, Globe, LogOut, Sun, Moon, Monitor, Cloud, HardDrive,
 } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import { getActiveClient } from "@/lib/supabase-client";
@@ -173,6 +173,22 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
                 </>
               )}
             </div>
+
+            {/* Backend mode indicator */}
+            {(() => {
+              const mode = (() => { try { return localStorage.getItem("backend_mode") === "self-hosted" ? "self-hosted" : "cloud"; } catch { return "cloud"; } })();
+              const isCloud = mode === "cloud";
+              return (
+                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono border ${
+                  isCloud
+                    ? "bg-primary/10 border-primary/20 text-primary"
+                    : "bg-warning/10 border-warning/20 text-warning"
+                }`}>
+                  {isCloud ? <Cloud className="h-3 w-3" /> : <HardDrive className="h-3 w-3" />}
+                  {isCloud ? "CLOUD" : "SELF-HOSTED"}
+                </div>
+              );
+            })()}
 
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-success/10 border border-success/20">
               <div className="w-2 h-2 rounded-full bg-success animate-pulse-glow" />

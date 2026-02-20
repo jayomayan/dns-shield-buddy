@@ -1325,6 +1325,92 @@ export default function SettingsPage({ user }: { user: User | null }) {
           Exported file contains: bridge URL, API key, Okta config, log settings, and notification preferences. API tokens are included when exported.
         </p>
       </motion.div>
+
+      {/* ── Migration SQL Export ─────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5 }}
+        className="rounded-xl border border-border bg-card p-6"
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 rounded-lg bg-primary/10">
+            <Database className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold">Self-Hosted Migration SQL</h2>
+            <p className="text-xs text-muted-foreground">Generate the SQL needed to set up the user_settings table on your own Supabase instance.</p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => {
+            const sql = `-- DNSGuard Self-Hosted Migration
+-- Run this SQL in your Supabase SQL editor to create the required tables and policies.
+
+-- 1. Create user_settings table
+CREATE TABLE IF NOT EXISTS public.user_settings (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL,
+  admin_password_hash TEXT NOT NULL DEFAULT '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
+  api_tokens JSONB,
+  bridge_api_key TEXT,
+  bridge_url TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  local_admin_enabled BOOLEAN NOT NULL DEFAULT true,
+  log_max_size TEXT NOT NULL DEFAULT '500',
+  log_retention TEXT NOT NULL DEFAULT '30',
+  log_rotation TEXT NOT NULL DEFAULT 'daily',
+  notify_blocked BOOLEAN NOT NULL DEFAULT true,
+  notify_service BOOLEAN NOT NULL DEFAULT true,
+  okta_client_id TEXT,
+  okta_client_secret TEXT,
+  okta_domain TEXT,
+  okta_enabled BOOLEAN NOT NULL DEFAULT false
+);
+
+-- 2. Enable Row Level Security
+ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
+
+-- 3. RLS Policies (permissive for single-tenant / self-hosted use)
+CREATE POLICY "Allow read settings" ON public.user_settings FOR SELECT USING (true);
+CREATE POLICY "Allow insert settings" ON public.user_settings FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update settings" ON public.user_settings FOR UPDATE USING (true);
+CREATE POLICY "Allow delete settings" ON public.user_settings FOR DELETE USING (true);
+
+-- 4. Auto-update updated_at trigger
+CREATE OR REPLACE FUNCTION public.update_user_settings_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SET search_path TO 'public';
+
+CREATE TRIGGER update_user_settings_updated_at
+  BEFORE UPDATE ON public.user_settings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_user_settings_updated_at();
+`;
+            const blob = new Blob([sql], { type: "text/sql" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "dnsguard-migration.sql";
+            a.click();
+            URL.revokeObjectURL(url);
+            toast({ title: "Migration SQL exported", description: "Run this file in your self-hosted Supabase SQL editor." });
+          }}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+        >
+          <Download className="h-4 w-4" /> Export Migration SQL
+        </button>
+
+        <p className="text-[11px] text-muted-foreground mt-3">
+          This generates the complete SQL to replicate the DNSGuard schema on a self-hosted Supabase instance, including RLS policies and triggers.
+        </p>
+      </motion.div>
     </div>
   );
 }
