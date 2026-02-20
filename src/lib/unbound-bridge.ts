@@ -232,12 +232,6 @@ export interface AppSettings {
   log_max_size?: string;
   notify_blocked?: boolean;
   notify_service?: boolean;
-  db_type?: string;
-  db_host?: string | null;
-  db_port?: string | null;
-  db_name?: string | null;
-  db_user?: string | null;
-  db_password?: string | null;
 }
 
 /** Fetch all app settings from the bridge (GET /settings). */

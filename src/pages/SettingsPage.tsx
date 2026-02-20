@@ -226,7 +226,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
       const s = loadSettingsFromStore();
       applySettings(s);
     } catch {
-      setLoadError("Could not load settings. Check your database instance is running.");
+      setLoadError("Could not load settings. Check your connection.");
     }
     setLoadingSettings(false);
   }, [applySettings]);
@@ -241,7 +241,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
   // ── Persist to DB ───────────────────────────────────────────────────────
   const saveToSupabase = useCallback(async (patch: AppSettings): Promise<boolean> => {
     const ok = await saveSettingsToStore(patch);
-    if (!ok) toast({ title: "Save failed", description: "Could not save settings. Check your database instance.", variant: "destructive" });
+    if (!ok) toast({ title: "Save failed", description: "Could not save settings.", variant: "destructive" });
     return ok;
   }, []);
 
@@ -295,7 +295,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
         };
         applySettings(payload);
         const ok = await saveToSupabase(payload);
-        if (ok) toast({ title: "Config imported", description: "Settings restored and saved to Supabase." });
+        if (ok) toast({ title: "Config imported", description: "Settings restored and saved." });
       } catch {
         setImportError("Invalid config file — make sure you're using a file exported from DNS Shield.");
       }
@@ -319,7 +319,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
     // 2. Persist to Supabase
     const ok = await saveToSupabase({ bridge_url: bridgeInput || null, bridge_api_key: apiKeyInput || null });
     if (ok) {
-      toast({ title: "Bridge settings saved", description: "Connection settings saved to Supabase." });
+      toast({ title: "Bridge settings saved", description: "Connection settings saved." });
     }
   };
 
@@ -473,7 +473,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
     setNewTokenExpiry("90");
     setShowCreateToken(false);
     setTimeout(() => setJustCreatedToken(null), 10000);
-    toast({ title: "Token created", description: "API token saved to Supabase." });
+    toast({ title: "Token created", description: "API token saved." });
   };
 
   const revokeToken = async (id: string) => {
@@ -504,7 +504,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
       <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary/5 border border-primary/20 text-xs text-primary">
         <Database className="h-3.5 w-3.5 shrink-0" />
         <span className="flex-1">
-          All settings are stored in your local Supabase instance.
+          All settings are stored in Lovable Cloud.
         </span>
         {loadingSettings ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -518,7 +518,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
       {loadError && (
         <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-warning/5 border border-warning/20 text-xs text-warning">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span>{loadError} Settings shown are defaults until Supabase is reachable.</span>
+          <span>{loadError} Settings shown are defaults until the backend is reachable.</span>
         </div>
       )}
 
@@ -664,7 +664,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
                 okta_client_secret: oktaSecret.trim() || null,
                 okta_enabled: true,
               });
-              if (ok) toast({ title: "Okta SSO saved", description: "Saved to Supabase. SSO is now active." });
+              if (ok) toast({ title: "Okta SSO saved", description: "SSO is now active." });
             }}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
           >
@@ -972,7 +972,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
             <Plus className="h-3.5 w-3.5" /> Create Token
           </button>
         </div>
-        <p className="text-xs text-muted-foreground mb-4">Generate tokens for API authentication. Tokens are persisted to Supabase.</p>
+        <p className="text-xs text-muted-foreground mb-4">Generate tokens for API authentication.</p>
 
         <AnimatePresence>
           {showCreateToken && (
@@ -1097,7 +1097,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
             <button
               onClick={async () => {
                 const ok = await saveToSupabase({ log_retention: logRetention, log_rotation: logRotation, log_max_size: maxLogSize });
-                if (ok) toast({ title: "Log settings saved", description: "Saved to Supabase." });
+                if (ok) toast({ title: "Log settings saved" });
               }}
               className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
             >
@@ -1136,7 +1136,7 @@ export default function SettingsPage({ user }: { user: User | null }) {
           <h3 className="text-sm font-semibold">Backup &amp; Restore</h3>
         </div>
         <p className="text-xs text-muted-foreground mb-5">
-          Export your configuration as JSON. Import it to restore all settings — they will be saved to Supabase.
+          Export your configuration as JSON. Import it to restore all settings.
         </p>
 
         <div className="flex items-center gap-3">
