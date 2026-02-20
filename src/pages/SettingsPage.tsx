@@ -96,7 +96,18 @@ async function loadSettingsFromSupabase(): Promise<AppSettings | null> {
       .select("*")
       .eq("user_id", SYSTEM_USER_ID)
       .maybeSingle();
-    if (error || !data) return null;
+    if (error) { console.error("Supabase load error:", error); return null; }
+    if (!data) {
+      // No row yet — create one with defaults so subsequent browsers find it
+      const defaults: AppSettings = {
+        bridge_url: null, bridge_api_key: null,
+        okta_domain: null, okta_client_id: null, okta_client_secret: null, okta_enabled: false,
+        api_tokens: null, log_retention: "30", log_rotation: "daily", log_max_size: "500",
+        notify_blocked: true, notify_service: true,
+      };
+      await supabase.from("user_settings").insert([{ user_id: SYSTEM_USER_ID, ...defaults }]);
+      return defaults;
+    }
     return {
       bridge_url: data.bridge_url,
       bridge_api_key: data.bridge_api_key,
