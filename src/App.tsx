@@ -262,12 +262,15 @@ function AuthGate({ children }: { children: (user: User | null) => React.ReactNo
   const [user, setUser]       = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [backendDown, setBackendDown] = useState(false);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
       setLoading(false);
     }).catch((err) => {
       console.warn("Supabase auth unreachable, continuing without auth:", err);
+      setBackendDown(true);
       setLoading(false);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -284,7 +287,17 @@ function AuthGate({ children }: { children: (user: User | null) => React.ReactNo
     );
   }
 
-  return <>{children(user)}</>;
+  return (
+    <>
+      {backendDown && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-destructive text-destructive-foreground text-xs text-center py-2 px-4 font-medium shadow-md">
+          ⚠ Backend unreachable — check your local Supabase instance is running and VITE_SUPABASE_URL is correct.
+          <button onClick={() => setBackendDown(false)} className="ml-3 underline opacity-80 hover:opacity-100">Dismiss</button>
+        </div>
+      )}
+      {children(user)}
+    </>
+  );
 }
 
 // ─── App ─────────────────────────────────────────────────────────────────────
