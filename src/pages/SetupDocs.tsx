@@ -417,8 +417,12 @@ const LOG_RE_BLOCKED = /^\\[(\\d+)\\]\\s+unbound\\[\\d+:\\d+\\]\\s+info:\\s+\\S+
 const LOG_RE_QUERY   = /^\\[(\\d+)\\]\\s+unbound\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL|HTTPS|SVCB|CAA|NAPTR|SOA|ANY)\\s+IN/;
 // Normal query with ISO timestamp (when log-time-ascii: yes is set in unbound.conf)
 const LOG_RE_ISO     = /^([\\d\\-T:]+Z?)\\s+unbound\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL|HTTPS|SVCB|CAA|NAPTR|SOA|ANY)\\s+IN/;
-// Legacy syslog format fallback: Feb 18 13:54:37 hostname unbound[pid]: [pid:tid] info: ip domain. TYPE IN
-const LOG_RE_SYSLOG  = /^(\\w{3}\\s+\\d+\\s+[\\d:]+)\\s+\\S+\\s+unbound\\[\\d+\\]:\\s+\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL|HTTPS|SVCB|CAA|NAPTR|SOA|ANY)\\s+IN/;
+// Syslog format: Feb 21 06:13:04 hostname unbound[pid]: [pid:tid] info: ip domain. TYPE IN [RCODE time cached size]
+// Also supports "unbound:" without PID bracket
+// Response line (has RCODE + response time + cached flag + size) — prefer these over query-only lines
+const LOG_RE_SYSLOG_RESP = /^(\\w{3}\\s+\\d+\\s+[\\d:]+)\\s+\\S+\\s+unbound(?:\\[\\d+\\])?:\\s+\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL|HTTPS|SVCB|CAA|NAPTR|SOA|ANY)\\s+IN\\s+(\\w+)\\s+([\\d.]+)\\s+(\\d+)\\s+(\\d+)/;
+// Query-only line (no RCODE) — used as fallback when no response line follows
+const LOG_RE_SYSLOG  = /^(\\w{3}\\s+\\d+\\s+[\\d:]+)\\s+\\S+\\s+unbound(?:\\[\\d+\\])?:\\s+\\[\\d+:\\d+\\]\\s+info:\\s+([\\d.:a-fA-F]+)\\s+(\\S+?)\\.?\\s+(A|AAAA|CNAME|MX|TXT|SRV|PTR|NS|NULL|HTTPS|SVCB|CAA|NAPTR|SOA|ANY)\\s+IN\\s*$/;
 
 let logIndex = 0;
 function parseLogLine(line) {
@@ -468,7 +472,23 @@ function parseLogLine(line) {
       responseTime: 0,
     };
   }
-  // 4. Legacy syslog format fallback
+  // 4. Syslog response line (has RCODE, responseTime, cached, size)
+  // Groups: m[1]=syslog_ts, m[2]=clientIp, m[3]=domain, m[4]=type, m[5]=rcode, m[6]=responseTime, m[7]=cached, m[8]=size
+  m = line.match(LOG_RE_SYSLOG_RESP);
+  if (m) {
+    const ts = new Date(m[1] + ' ' + new Date().getFullYear());
+    if (isNaN(ts.getTime())) return null;
+    return {
+      id: 'log-' + ts.getTime() + '-' + (logIndex++),
+      timestamp: ts.toISOString(),
+      clientIp: m[2],
+      domain: m[3].replace(/\\.$/, ''),
+      type: m[4],
+      status: m[5] === 'REFUSED' ? 'blocked' : 'allowed',
+      responseTime: Math.round(parseFloat(m[6]) * 1000),
+    };
+  }
+  // 5. Syslog query-only line (no RCODE) — fallback
   // Groups: m[1]=syslog_ts, m[2]=clientIp, m[3]=domain, m[4]=type
   m = line.match(LOG_RE_SYSLOG);
   if (m) {
