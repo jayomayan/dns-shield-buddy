@@ -25,7 +25,7 @@ export function getBackendMode(): BackendMode {
     const v = localStorage.getItem(LS_MODE);
     return v === "self-hosted" ? "self-hosted" : "cloud";
   } catch {
-    return "cloud";
+    return "self-hosted";
   }
 }
 
