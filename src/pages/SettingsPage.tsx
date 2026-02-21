@@ -613,6 +613,36 @@ export default function SettingsPage({ user }: { user: User | null }) {
                   setShTesting(true);
                   setShTestResult(null);
                   try {
+                    // First do a raw fetch to detect CORS / network issues before using the SDK
+                    const healthUrl = shUrl.trim().replace(/\/$/, "") + "/rest/v1/";
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 8000);
+                    try {
+                      const res = await fetch(healthUrl, {
+                        method: "GET",
+                        headers: {
+                          apikey: shKey.trim(),
+                          Authorization: `Bearer ${shKey.trim()}`,
+                        },
+                        signal: controller.signal,
+                      });
+                      clearTimeout(timeout);
+                      if (!res.ok && res.status !== 200) {
+                        setShTestResult({ ok: false, message: `HTTP ${res.status} — check the URL and API key. If self-hosted, ensure CORS allows this origin.` });
+                        setShTesting(false);
+                        return;
+                      }
+                    } catch (fetchErr: unknown) {
+                      clearTimeout(timeout);
+                      const msg = fetchErr instanceof DOMException && fetchErr.name === "AbortError"
+                        ? "Connection timed out (8 s). Check the URL and ensure the server is reachable."
+                        : "Network error — this usually means CORS is blocking the request. Add this app's origin to your Supabase CORS / API allowed origins, or use a reverse-proxy.";
+                      setShTestResult({ ok: false, message: msg });
+                      setShTesting(false);
+                      return;
+                    }
+
+                    // SDK-level table check
                     const testClient = (await import("@supabase/supabase-js")).createClient(shUrl.trim(), shKey.trim());
                     const { error } = await testClient.from("user_settings").select("id").limit(1);
                     if (error) {
