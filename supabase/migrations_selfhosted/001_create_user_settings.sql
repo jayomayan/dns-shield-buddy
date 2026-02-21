@@ -1,4 +1,5 @@
--- Migration for self-hosted Supabase: create user_settings table
+-- Migration for self-hosted Supabase: create platform-wide settings table
+-- This is NOT per-user; a single system row stores all configuration.
 -- Run this on your self-hosted Supabase at dnsguard.frontiertowersphilippines.com
 
 CREATE TABLE IF NOT EXISTS public.user_settings (
