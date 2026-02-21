@@ -18,6 +18,7 @@ import SetupDocs from "@/pages/SetupDocs";
 import SettingsPage from "@/pages/SettingsPage";
 import OktaCallback from "@/pages/OktaCallback";
 import NotFound from "./pages/NotFound";
+import AuthPage from "@/pages/AuthPage";
 import {
   getOktaConfig,
   getOktaSession,
@@ -272,23 +273,27 @@ function LocalAdminGate({ children }: { children: React.ReactNode }) {
 
 // ─── Supabase auth gate ───────────────────────────────────────────────────────
 
-function AuthGate({ children }: { children: (user: User | null) => React.ReactNode }) {
+function AuthGate({ children }: { children: (user: User) => React.ReactNode }) {
   const [user, setUser]       = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [backendDown, setBackendDown] = useState(false);
 
   useEffect(() => {
+    // IMPORTANT: set up listener BEFORE getSession to avoid race conditions
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
     supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
       setLoading(false);
     }).catch((err) => {
-      console.warn("Supabase auth unreachable, continuing without auth:", err);
+      console.warn("Supabase auth unreachable:", err);
       setBackendDown(true);
       setLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+
     return () => subscription.unsubscribe();
   }, []);
 
@@ -300,17 +305,24 @@ function AuthGate({ children }: { children: (user: User | null) => React.ReactNo
     );
   }
 
-  return (
-    <>
-      {backendDown && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-destructive text-destructive-foreground text-xs text-center py-2 px-4 font-medium shadow-md">
-          ⚠ Backend unreachable — check your connection.
-          <button onClick={() => setBackendDown(false)} className="ml-3 underline opacity-80 hover:opacity-100">Dismiss</button>
+  if (backendDown) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <p className="text-sm text-destructive font-medium">⚠ Backend unreachable</p>
+          <p className="text-xs text-muted-foreground">Check your connection and refresh.</p>
+          <button onClick={() => window.location.reload()} className="text-xs text-primary underline">Retry</button>
         </div>
-      )}
-      {children(user)}
-    </>
-  );
+      </div>
+    );
+  }
+
+  // Not authenticated → show login page
+  if (!user) {
+    return <AuthPage />;
+  }
+
+  return <>{children(user)}</>;
 }
 
 // ─── App ─────────────────────────────────────────────────────────────────────
@@ -330,11 +342,11 @@ const App = () => (
             <Route
               path="*"
               element={
-                <SettingsLoader>
-                  <OktaGate>
-                    <LocalAdminGate>
-                      <AuthGate>
-                        {(user) => (
+                <AuthGate>
+                  {(user) => (
+                    <SettingsLoader>
+                      <OktaGate>
+                        <LocalAdminGate>
                           <Routes>
                             <Route path="/" element={<AppLayout user={user}><Dashboard /></AppLayout>} />
                             <Route path="/dns-rules" element={<AppLayout user={user}><DnsRules /></AppLayout>} />
@@ -345,11 +357,11 @@ const App = () => (
                             <Route path="/settings" element={<AppLayout user={user}><SettingsPage user={user} /></AppLayout>} />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
-                        )}
-                      </AuthGate>
-                    </LocalAdminGate>
-                  </OktaGate>
-                </SettingsLoader>
+                        </LocalAdminGate>
+                      </OktaGate>
+                    </SettingsLoader>
+                  )}
+                </AuthGate>
               }
             />
           </Routes>
