@@ -23,11 +23,9 @@ export interface AppConfig {
   log_max_size: string;
   notify_blocked: boolean;
   notify_service: boolean;
-  local_admin_enabled: boolean;
-  admin_password_hash: string;
 }
 
-const DEFAULT_PASSWORD_HASH = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918";
+
 
 const DEFAULTS: AppConfig = {
   bridge_url: null,
@@ -42,8 +40,6 @@ const DEFAULTS: AppConfig = {
   log_max_size: "500",
   notify_blocked: true,
   notify_service: true,
-  local_admin_enabled: true,
-  admin_password_hash: DEFAULT_PASSWORD_HASH,
 };
 
 // ── Module-level cache ────────────────────────────────────────────────────────
@@ -116,8 +112,6 @@ async function _doLoad(): Promise<AppConfig> {
       log_max_size: data.log_max_size,
       notify_blocked: data.notify_blocked,
       notify_service: data.notify_service,
-      local_admin_enabled: (data as Record<string, unknown>).local_admin_enabled as boolean ?? true,
-      admin_password_hash: (data as Record<string, unknown>).admin_password_hash as string ?? DEFAULT_PASSWORD_HASH,
     };
     _loaded = true;
     notify();
