@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getActiveClient } from "@/lib/supabase-client";
+import { supabase } from "@/lib/supabase-client";
 import { User } from "@supabase/supabase-js";
 import { Json } from "@/integrations/supabase/types";
 
@@ -45,7 +45,7 @@ export function useUserSettings(user: User | null) {
       return;
     }
     setLoading(true);
-    const { data, error } = await getActiveClient()
+    const { data, error } = await supabase
       .from("user_settings")
       .select("*")
       .eq("user_id", user.id)
@@ -81,7 +81,7 @@ export function useUserSettings(user: User | null) {
     setSaving(true);
     const merged = { ...settings, ...updates };
 
-    const { error } = await getActiveClient()
+    const { error } = await supabase
       .from("user_settings")
       .upsert(
         [{ user_id: user.id, ...merged }],

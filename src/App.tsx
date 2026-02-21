@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { useEffect, useState, createContext, useContext } from "react";
-import { getActiveClient } from "@/lib/supabase-client";
+import { supabase } from "@/lib/supabase-client";
 import { User } from "@supabase/supabase-js";
 import { loadConfig, isLoaded } from "@/lib/settings-store";
 import AppLayout from "@/components/layout/AppLayout";
@@ -278,7 +278,7 @@ function AuthGate({ children }: { children: (user: User | null) => React.ReactNo
   const [backendDown, setBackendDown] = useState(false);
 
   useEffect(() => {
-    getActiveClient().auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
       setLoading(false);
     }).catch((err) => {
@@ -286,7 +286,7 @@ function AuthGate({ children }: { children: (user: User | null) => React.ReactNo
       setBackendDown(true);
       setLoading(false);
     });
-    const { data: { subscription } } = getActiveClient().auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
     return () => subscription.unsubscribe();

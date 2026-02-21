@@ -1,9 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, LogIn, ExternalLink, RefreshCw, Cloud, HardDrive } from "lucide-react";
-import {
-  getBackendMode, setBackendMode, getSelfHostedConfig, setSelfHostedConfig,
-  type BackendMode,
-} from "@/lib/supabase-client";
+import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, LogIn, ExternalLink, RefreshCw } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBridgeUrl, getBridgeHeaders } from "@/hooks/use-bridge-url";
@@ -127,14 +123,8 @@ export default function SettingsPage({ user }: { user: User | null }) {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
-  // Backend mode state
-  const [backendModeState, setBackendModeState] = useState<BackendMode>(getBackendMode);
-  const shConfig = getSelfHostedConfig();
-  const [shUrl, setShUrl] = useState(shConfig.url);
-  const [shKey, setShKey] = useState(shConfig.anonKey);
-  const [showShKey, setShowShKey] = useState(false);
-  const [shTesting, setShTesting] = useState(false);
-  const [shTestResult, setShTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+
 
   // Okta state
   const [oktaDomain, setOktaDomain] = useState("");
@@ -515,12 +505,8 @@ export default function SettingsPage({ user }: { user: User | null }) {
 
       {/* Settings source banner */}
       <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary/5 border border-primary/20 text-xs text-primary">
-        {backendModeState === "cloud" ? <Cloud className="h-3.5 w-3.5 shrink-0" /> : <HardDrive className="h-3.5 w-3.5 shrink-0" />}
-        <span className="flex-1">
-          {backendModeState === "cloud"
-            ? "All settings are stored in Lovable Cloud."
-            : `Connected to self-hosted Supabase at ${shUrl || "(not configured)"}.`}
-        </span>
+        <Database className="h-3.5 w-3.5 shrink-0" />
+        <span className="flex-1">Settings are stored in the connected database.</span>
         {loadingSettings ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
         ) : (
@@ -536,194 +522,6 @@ export default function SettingsPage({ user }: { user: User | null }) {
           <span>{loadError} Settings shown are defaults until the backend is reachable.</span>
         </div>
       )}
-
-      {/* Backend Mode */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
-        <div className="flex items-center gap-2 mb-1">
-          <Database className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Backend Mode</h3>
-        </div>
-        <p className="text-xs text-muted-foreground mb-4">
-          Choose where settings and data are stored. Switch between Lovable Cloud and a self-hosted Supabase instance.
-        </p>
-
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          {([
-            { mode: "cloud" as const, icon: Cloud, label: "Lovable Cloud", desc: "Managed backend — no setup needed" },
-            { mode: "self-hosted" as const, icon: HardDrive, label: "Self-Hosted Supabase", desc: "Your own Supabase instance" },
-          ]).map(({ mode, icon: Icon, label, desc }) => (
-            <button
-              key={mode}
-              onClick={() => {
-                setBackendModeState(mode);
-                setBackendMode(mode);
-                if (mode === "cloud") {
-                  toast({ title: "Switched to Lovable Cloud", description: "Reload the page to apply changes." });
-                }
-              }}
-              className={`flex items-start gap-3 p-4 rounded-lg border text-left transition-all ${
-                backendModeState === mode
-                  ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-                  : "border-border hover:border-muted-foreground/30"
-              }`}
-            >
-              <Icon className={`h-5 w-5 mt-0.5 shrink-0 ${backendModeState === mode ? "text-primary" : "text-muted-foreground"}`} />
-              <div>
-                <span className={`text-sm font-medium block ${backendModeState === mode ? "text-primary" : "text-foreground"}`}>{label}</span>
-                <span className="text-[11px] text-muted-foreground">{desc}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {backendModeState === "self-hosted" && (
-          <div className="space-y-3 border-t border-border pt-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1.5">Supabase URL</label>
-              <input
-                value={shUrl}
-                onChange={(e) => setShUrl(e.target.value)}
-                placeholder="https://your-project.supabase.co"
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1.5">Anon / Publishable Key</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type={showShKey ? "text" : "password"}
-                  value={shKey}
-                  onChange={(e) => setShKey(e.target.value)}
-                  placeholder="eyJhbGci..."
-                  className={inputClass + " flex-1 font-mono"}
-                />
-                <button onClick={() => setShowShKey((v) => !v)} className="p-2 text-muted-foreground hover:text-foreground transition-colors">
-                  {showShKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={async () => {
-                  if (!shUrl.trim() || !shKey.trim()) {
-                    toast({ title: "Missing fields", description: "Enter both Supabase URL and Anon Key.", variant: "destructive" });
-                    return;
-                  }
-                  setShTesting(true);
-                  setShTestResult(null);
-                  try {
-                    // First do a raw fetch to detect CORS / network issues before using the SDK
-                    const healthUrl = shUrl.trim().replace(/\/$/, "") + "/rest/v1/";
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 8000);
-                    try {
-                      const res = await fetch(healthUrl, {
-                        method: "GET",
-                        headers: {
-                          apikey: shKey.trim(),
-                          Authorization: `Bearer ${shKey.trim()}`,
-                        },
-                        signal: controller.signal,
-                      });
-                      clearTimeout(timeout);
-                      if (!res.ok && res.status !== 200) {
-                        setShTestResult({ ok: false, message: `HTTP ${res.status} — check the URL and API key. If self-hosted, ensure CORS allows this origin.` });
-                        setShTesting(false);
-                        return;
-                      }
-                    } catch (fetchErr: unknown) {
-                      clearTimeout(timeout);
-                      const msg = fetchErr instanceof DOMException && fetchErr.name === "AbortError"
-                        ? "Connection timed out (8 s). Check the URL and ensure the server is reachable."
-                        : "Network error — this usually means CORS is blocking the request. Add this app's origin to your Supabase CORS / API allowed origins, or use a reverse-proxy.";
-                      setShTestResult({ ok: false, message: msg });
-                      setShTesting(false);
-                      return;
-                    }
-
-                    // SDK-level table check
-                    const testClient = (await import("@supabase/supabase-js")).createClient(shUrl.trim(), shKey.trim());
-                    const { error } = await testClient.from("user_settings").select("id").limit(1);
-                    if (error) {
-                      setShTestResult({ ok: false, message: `Query failed: ${error.message}` });
-                    } else {
-                      setShTestResult({ ok: true, message: "Connected successfully! The user_settings table is accessible." });
-                    }
-                  } catch (e: unknown) {
-                    setShTestResult({ ok: false, message: e instanceof Error ? e.message : "Connection failed" });
-                  }
-                  setShTesting(false);
-                }}
-                disabled={shTesting}
-                className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-              >
-                {shTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                {shTesting ? "Testing…" : "Test Connection"}
-              </button>
-              <button
-                onClick={() => {
-                  setSelfHostedConfig(shUrl.trim(), shKey.trim());
-                  setBackendMode("self-hosted");
-                  toast({ title: "Self-hosted config saved", description: "Reload the page to connect to your instance." });
-                }}
-                className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
-              >
-                <Save className="h-3.5 w-3.5" /> Save & Apply
-              </button>
-            </div>
-
-            {shTestResult && (
-              <div className={`flex items-center gap-2 p-3 rounded-lg border text-xs ${
-                shTestResult.ok
-                  ? "bg-success/5 border-success/20 text-success"
-                  : "bg-destructive/5 border-destructive/20 text-destructive"
-              }`}>
-                {shTestResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
-                <span>{shTestResult.message}</span>
-              </div>
-            )}
-
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/50 border border-border text-[11px] text-muted-foreground">
-              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-medium text-foreground">Self-hosted setup requirements:</span>
-                <ul className="mt-1 space-y-0.5 list-disc list-inside">
-                  <li>Your Supabase instance must have a <code className="bg-muted px-1 rounded">user_settings</code> table matching the expected schema.</li>
-                  <li>Run the same migrations from this project against your self-hosted database.</li>
-                  <li>RLS policies should allow access for your auth setup.</li>
-                </ul>
-              </div>
-            </div>
-
-            {/* Migration SQL Export */}
-            <div className="border-t border-border pt-4 mt-1">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-semibold text-foreground">Migration SQL</h4>
-                  <p className="text-[11px] text-muted-foreground">Download the SQL to set up the user_settings table on your instance.</p>
-                </div>
-                <button
-                  onClick={() => {
-                    const sql = `-- DNSGuard Self-Hosted Migration\n-- Run this SQL in your Supabase SQL editor to create the required tables and policies.\n\n-- 1. Create user_settings table\nCREATE TABLE IF NOT EXISTS public.user_settings (\n  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,\n  user_id UUID NOT NULL,\n  admin_password_hash TEXT NOT NULL DEFAULT '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',\n  api_tokens JSONB,\n  bridge_api_key TEXT,\n  bridge_url TEXT,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  local_admin_enabled BOOLEAN NOT NULL DEFAULT true,\n  log_max_size TEXT NOT NULL DEFAULT '500',\n  log_retention TEXT NOT NULL DEFAULT '30',\n  log_rotation TEXT NOT NULL DEFAULT 'daily',\n  notify_blocked BOOLEAN NOT NULL DEFAULT true,\n  notify_service BOOLEAN NOT NULL DEFAULT true,\n  okta_client_id TEXT,\n  okta_client_secret TEXT,\n  okta_domain TEXT,\n  okta_enabled BOOLEAN NOT NULL DEFAULT false\n);\n\n-- 2. Enable Row Level Security\nALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;\n\n-- 3. RLS Policies (permissive for single-tenant / self-hosted use)\nCREATE POLICY "Allow read settings" ON public.user_settings FOR SELECT USING (true);\nCREATE POLICY "Allow insert settings" ON public.user_settings FOR INSERT WITH CHECK (true);\nCREATE POLICY "Allow update settings" ON public.user_settings FOR UPDATE USING (true);\nCREATE POLICY "Allow delete settings" ON public.user_settings FOR DELETE USING (true);\n\n-- 4. Auto-update updated_at trigger\nCREATE OR REPLACE FUNCTION public.update_user_settings_updated_at()\nRETURNS TRIGGER AS $$\nBEGIN\n  NEW.updated_at = now();\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql SET search_path TO 'public';\n\nCREATE TRIGGER update_user_settings_updated_at\n  BEFORE UPDATE ON public.user_settings\n  FOR EACH ROW\n  EXECUTE FUNCTION public.update_user_settings_updated_at();\n`;
-                    const blob = new Blob([sql], { type: "text/sql" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = "dnsguard-migration.sql";
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    toast({ title: "Migration SQL exported", description: "Run this file in your self-hosted Supabase SQL editor." });
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Download className="h-3.5 w-3.5" /> Export SQL
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </motion.div>
 
       {/* Bridge Connection */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
