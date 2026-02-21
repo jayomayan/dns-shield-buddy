@@ -1,36 +1,45 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase-client";
 import { Globe, Shield, Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-
-type Mode = "login" | "signup";
+import { getOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
+import { loadConfig, isLoaded } from "@/lib/settings-store";
 
 export default function AuthPage() {
-  const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [oktaAvailable, setOktaAvailable] = useState(false);
+  const [oktaLoading, setOktaLoading] = useState(false);
+
+  useEffect(() => {
+    const init = async () => {
+      if (!isLoaded()) await loadConfig();
+      const cfg = getOktaConfig();
+      setOktaAvailable(!!cfg?.enabled);
+    };
+    init();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
-    if (mode === "signup") {
-      const { error } = await supabase.auth.signUp({ email, password });
-      if (error) {
-        toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "Check your email", description: "A confirmation link has been sent to your inbox." });
-      }
-    } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        toast({ title: "Sign in failed", description: error.message, variant: "destructive" });
-      }
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      toast({ title: "Sign in failed", description: error.message, variant: "destructive" });
     }
-
     setLoading(false);
+  };
+
+  const handleOktaLogin = () => {
+    const cfg = getOktaConfig();
+    if (!cfg) {
+      toast({ title: "Okta not configured", description: "Please configure Okta in Settings first.", variant: "destructive" });
+      return;
+    }
+    setOktaLoading(true);
+    startOktaLogin(cfg);
   };
 
   const inputClass =
@@ -51,15 +60,28 @@ export default function AuthPage() {
         <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-1">
             <Shield className="h-4 w-4 text-primary" />
-            <h1 className="text-sm font-semibold">
-              {mode === "login" ? "Sign in to your account" : "Create an account"}
-            </h1>
+            <h1 className="text-sm font-semibold">Sign in to your account</h1>
           </div>
           <p className="text-xs text-muted-foreground mb-6">
-            {mode === "login"
-              ? "Your settings are stored in the cloud and sync across all browsers."
-              : "Settings you save will sync across all your browsers and devices."}
+            Your settings are stored in the cloud and sync across all browsers.
           </p>
+
+          {oktaAvailable && (
+            <>
+              <button
+                onClick={handleOktaLogin}
+                disabled={oktaLoading}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-accent text-accent-foreground border border-border rounded-lg text-sm font-medium hover:bg-accent/80 transition-colors disabled:opacity-50 mb-4"
+              >
+                {oktaLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
+                Login with Okta
+              </button>
+              <div className="relative mb-4">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
+                <div className="relative flex justify-center text-xs"><span className="bg-card px-2 text-muted-foreground">or</span></div>
+              </div>
+            </>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -101,27 +123,9 @@ export default function AuthPage() {
               className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
               {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {mode === "login" ? "Sign In" : "Create Account"}
+              Sign In
             </button>
           </form>
-
-          <div className="mt-4 text-center text-xs text-muted-foreground">
-            {mode === "login" ? (
-              <>
-                Don&apos;t have an account?{" "}
-                <button onClick={() => setMode("signup")} className="text-primary hover:underline">
-                  Sign up
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{" "}
-                <button onClick={() => setMode("login")} className="text-primary hover:underline">
-                  Sign in
-                </button>
-              </>
-            )}
-          </div>
         </div>
       </div>
     </div>
