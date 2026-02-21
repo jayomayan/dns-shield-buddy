@@ -20,14 +20,10 @@ import OktaCallback from "@/pages/OktaCallback";
 import NotFound from "./pages/NotFound";
 import AuthPage from "@/pages/AuthPage";
 import {
-  getOktaConfig,
   getOktaSession,
   clearOktaSession,
-  startOktaLogin,
   type OktaSession,
 } from "@/hooks/use-okta-session";
-
-import { Globe, Loader2, LogIn, Shield } from "lucide-react";
 
 const queryClient = new QueryClient();
 
@@ -65,12 +61,10 @@ function SettingsLoader({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// ─── Okta Gate ───────────────────────────────────────────────────────────────
+// ─── Okta Context Provider (no gate — just provides session to children) ────
 
-function OktaGate({ children }: { children: React.ReactNode }) {
-  const config  = getOktaConfig();
+function OktaProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<OktaSession | null>(() => getOktaSession());
-  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setSession(getOktaSession()), 60_000);
@@ -82,64 +76,16 @@ function OktaGate({ children }: { children: React.ReactNode }) {
     setSession(null);
   };
 
-  if (!config?.enabled) {
-    return <OktaContext.Provider value={{ session: null, signOut }}>{children}</OktaContext.Provider>;
-  }
-
-  if (session) {
-    return <OktaContext.Provider value={{ session, signOut }}>{children}</OktaContext.Provider>;
-  }
-
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="flex items-center gap-3 justify-center">
-          <Globe className="h-8 w-8 text-primary" />
-          <div>
-            <span className="text-xl font-bold text-gradient-primary">DNSGuard</span>
-            <span className="block text-[10px] text-muted-foreground font-mono -mt-1">ENTERPRISE</span>
-          </div>
-        </div>
-
-        <div className="bg-card border border-border rounded-xl p-6 shadow-sm space-y-5">
-          <div className="flex items-center gap-2 mb-1">
-            <Shield className="h-4 w-4 text-primary" />
-            <h1 className="text-sm font-semibold">Enterprise Single Sign-On</h1>
-          </div>
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            This platform is protected by Okta SSO. Sign in with your organization account to continue.
-          </p>
-
-          <button
-            disabled={starting}
-            onClick={async () => {
-              setStarting(true);
-              try { await startOktaLogin(config); } catch { setStarting(false); }
-            }}
-            className="w-full flex items-center justify-center gap-2.5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
-          >
-            {starting
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <LogIn className="h-4 w-4" />}
-            {starting ? "Redirecting to Okta…" : "Sign in with Okta"}
-          </button>
-
-          <p className="text-[11px] text-muted-foreground text-center">
-            Powered by{" "}
-            <span className="font-medium text-foreground">{config.domain.replace(/^https?:\/\//, "")}</span>
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+  return <OktaContext.Provider value={{ session, signOut }}>{children}</OktaContext.Provider>;
 }
 
 // ─── Supabase auth gate ───────────────────────────────────────────────────────
 
-function AuthGate({ children }: { children: (user: User) => React.ReactNode }) {
+function AuthGate({ children }: { children: React.ReactNode }) {
   const [user, setUser]       = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [backendDown, setBackendDown] = useState(false);
+  const [oktaSession, setOktaSession] = useState<OktaSession | null>(() => getOktaSession());
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -158,6 +104,14 @@ function AuthGate({ children }: { children: (user: User) => React.ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Re-check okta session periodically
+  useEffect(() => {
+    const t = setInterval(() => setOktaSession(getOktaSession()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const isAuthenticated = !!user || !!oktaSession;
 
   if (loading) {
     return (
@@ -179,11 +133,11 @@ function AuthGate({ children }: { children: (user: User) => React.ReactNode }) {
     );
   }
 
-  if (!user) {
+  if (!isAuthenticated) {
     return <AuthPage />;
   }
 
-  return <>{children(user)}</>;
+  return <>{children}</>;
 }
 
 // ─── App ─────────────────────────────────────────────────────────────────────
@@ -202,22 +156,11 @@ const App = () => (
               path="*"
               element={
                 <AuthGate>
-                  {(user) => (
-                    <SettingsLoader>
-                      <OktaGate>
-                        <Routes>
-                          <Route path="/" element={<AppLayout user={user}><Dashboard /></AppLayout>} />
-                          <Route path="/dns-rules" element={<AppLayout user={user}><DnsRules /></AppLayout>} />
-                          <Route path="/query-logs" element={<AppLayout user={user}><QueryLogs /></AppLayout>} />
-                          <Route path="/monitoring" element={<AppLayout user={user}><Monitoring /></AppLayout>} />
-                          <Route path="/unbound" element={<AppLayout user={user}><UnboundConfig /></AppLayout>} />
-                          <Route path="/setup" element={<AppLayout user={user}><SetupDocs /></AppLayout>} />
-                          <Route path="/settings" element={<AppLayout user={user}><SettingsPage user={user} /></AppLayout>} />
-                          <Route path="*" element={<NotFound />} />
-                        </Routes>
-                      </OktaGate>
-                    </SettingsLoader>
-                  )}
+                  <SettingsLoader>
+                    <OktaProvider>
+                      <AppRoutes />
+                    </OktaProvider>
+                  </SettingsLoader>
                 </AuthGate>
               }
             />
@@ -227,5 +170,20 @@ const App = () => (
     </ThemeProvider>
   </QueryClientProvider>
 );
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<AppLayout><Dashboard /></AppLayout>} />
+      <Route path="/dns-rules" element={<AppLayout><DnsRules /></AppLayout>} />
+      <Route path="/query-logs" element={<AppLayout><QueryLogs /></AppLayout>} />
+      <Route path="/monitoring" element={<AppLayout><Monitoring /></AppLayout>} />
+      <Route path="/unbound" element={<AppLayout><UnboundConfig /></AppLayout>} />
+      <Route path="/setup" element={<AppLayout><SetupDocs /></AppLayout>} />
+      <Route path="/settings" element={<AppLayout><SettingsPage /></AppLayout>} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}
 
 export default App;

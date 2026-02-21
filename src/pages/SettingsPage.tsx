@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useBridgeUrl, getBridgeHeaders } from "@/hooks/use-bridge-url";
 import { saveOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
 
-import { User } from "@supabase/supabase-js";
+
 import { Json } from "@/integrations/supabase/types";
 import { getConfig, saveConfig, reloadConfig, type AppConfig } from "@/lib/settings-store";
 
@@ -110,7 +110,7 @@ async function saveSettingsToStore(patch: AppSettings): Promise<boolean> {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function SettingsPage({ user }: { user: User | null }) {
+export default function SettingsPage() {
   // Bridge connection (URL + key stored in localStorage only for bootstrapping)
   const { url: bridgeUrl, setUrl: setBridgeUrlState, apiKey: bridgeApiKey, setApiKey: setBridgeApiKeyState } = useBridgeUrl();
   const [bridgeInput, setBridgeInput] = useState(bridgeUrl);
