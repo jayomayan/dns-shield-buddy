@@ -2,36 +2,49 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Globe, Loader2, XCircle, AlertCircle } from "lucide-react";
 import { getOktaConfig, handleOktaCallback } from "@/hooks/use-okta-session";
+import { loadConfig, isLoaded } from "@/lib/settings-store";
 
 export default function OktaCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const params   = new URLSearchParams(window.location.search);
-    const code     = params.get("code");
-    const state    = params.get("state");
-    const errParam = params.get("error");
-    const errDesc  = params.get("error_description");
+    const run = async () => {
+      // Ensure settings are loaded from DB before reading Okta config
+      if (!isLoaded()) {
+        await loadConfig();
+      }
 
-    if (errParam) {
-      setError(errDesc ? `${errDesc} (${errParam})` : errParam);
-      return;
-    }
-    if (!code || !state) {
-      setError("Invalid callback — missing code or state. Please try again.");
-      return;
-    }
+      const params   = new URLSearchParams(window.location.search);
+      const code     = params.get("code");
+      const state    = params.get("state");
+      const errParam = params.get("error");
+      const errDesc  = params.get("error_description");
 
-    const cfg = getOktaConfig();
-    if (!cfg) {
-      setError("No Okta configuration found. Please configure Okta in Settings first.");
-      return;
-    }
+      if (errParam) {
+        setError(errDesc ? `${errDesc} (${errParam})` : errParam);
+        return;
+      }
+      if (!code || !state) {
+        setError("Invalid callback — missing code or state. Please try again.");
+        return;
+      }
 
-    handleOktaCallback(code, state, cfg)
-      .then(() => navigate("/", { replace: true }))
-      .catch((e: Error) => setError(e.message));
+      const cfg = getOktaConfig();
+      if (!cfg) {
+        setError("No Okta configuration found. Please configure Okta in Settings first.");
+        return;
+      }
+
+      try {
+        await handleOktaCallback(code, state, cfg);
+        navigate("/", { replace: true });
+      } catch (e: any) {
+        setError(e.message);
+      }
+    };
+
+    run();
   }, [navigate]);
 
   return (
