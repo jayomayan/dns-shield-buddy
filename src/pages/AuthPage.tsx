@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getActiveClient } from "@/lib/supabase-client";
+import { supabase } from "@/lib/supabase-client";
 import { Globe, Shield, Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -17,14 +17,14 @@ export default function AuthPage() {
     setLoading(true);
 
     if (mode === "signup") {
-      const { error } = await getActiveClient().auth.signUp({ email, password });
+      const { error } = await supabase.auth.signUp({ email, password });
       if (error) {
         toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
       } else {
         toast({ title: "Check your email", description: "A confirmation link has been sent to your inbox." });
       }
     } else {
-      const { error } = await getActiveClient().auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         toast({ title: "Sign in failed", description: error.message, variant: "destructive" });
       }

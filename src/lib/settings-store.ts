@@ -6,7 +6,7 @@
  * remain in localStorage since they are ephemeral.
  */
 
-import { getActiveClient } from "@/lib/supabase-client";
+import { supabase } from "@/lib/supabase-client";
 
 const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -83,7 +83,7 @@ export async function loadConfig(): Promise<AppConfig> {
 
 async function _doLoad(): Promise<AppConfig> {
   try {
-    const { data, error } = await getActiveClient()
+    const { data, error } = await supabase
       .from("user_settings")
       .select("*")
       .eq("user_id", SYSTEM_USER_ID)
@@ -97,7 +97,7 @@ async function _doLoad(): Promise<AppConfig> {
 
     if (!data) {
       // Create default row
-      await getActiveClient().from("user_settings").insert([{ user_id: SYSTEM_USER_ID }]);
+      await supabase.from("user_settings").insert([{ user_id: SYSTEM_USER_ID }]);
       _loaded = true;
       notify();
       return _config;
@@ -133,7 +133,7 @@ async function _doLoad(): Promise<AppConfig> {
 
 export async function saveConfig(patch: Partial<AppConfig>): Promise<boolean> {
   try {
-    const { error } = await getActiveClient()
+    const { error } = await supabase
       .from("user_settings")
       .update(patch as Record<string, unknown>)
       .eq("user_id", SYSTEM_USER_ID);

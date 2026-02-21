@@ -3,10 +3,10 @@ import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Shield, FileText, Settings, Server, Zap, BookOpen,
-  Activity, ChevronLeft, ChevronRight, Globe, LogOut, Sun, Moon, Monitor, Cloud, HardDrive,
+  Activity, ChevronLeft, ChevronRight, Globe, LogOut, Sun, Moon, Monitor,
 } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
-import { getActiveClient } from "@/lib/supabase-client";
+import { supabase } from "@/lib/supabase-client";
 import { User } from "@supabase/supabase-js";
 import { toast } from "@/hooks/use-toast";
 import { useOktaContext } from "@/App";
@@ -33,7 +33,7 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
   const oktaConfig = getOktaConfig();
 
   const handleSignOut = async () => {
-    await getActiveClient().auth.signOut();
+    await supabase.auth.signOut();
     if (oktaConfig?.enabled && oktaSession) {
       oktaSignOut();
       try {
@@ -174,21 +174,6 @@ export default function AppLayout({ children, user }: { children: React.ReactNod
               )}
             </div>
 
-            {/* Backend mode indicator */}
-            {(() => {
-              const mode = (() => { try { return localStorage.getItem("backend_mode") === "self-hosted" ? "self-hosted" : "cloud"; } catch { return "cloud"; } })();
-              const isCloud = mode === "cloud";
-              return (
-                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono border ${
-                  isCloud
-                    ? "bg-primary/10 border-primary/20 text-primary"
-                    : "bg-warning/10 border-warning/20 text-warning"
-                }`}>
-                  {isCloud ? <Cloud className="h-3 w-3" /> : <HardDrive className="h-3 w-3" />}
-                  {isCloud ? "CLOUD" : "SELF-HOSTED"}
-                </div>
-              );
-            })()}
 
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-success/10 border border-success/20">
               <div className="w-2 h-2 rounded-full bg-success animate-pulse-glow" />
