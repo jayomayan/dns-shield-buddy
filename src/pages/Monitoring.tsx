@@ -1,4 +1,5 @@
 import { Cpu, HardDrive, MemoryStick, Wifi, Play, Square, RotateCcw, Server, Pause, Globe, Activity, CheckCircle2, XCircle, Clock, Trash2, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { useLiveServerMetrics, useLivePing } from "@/hooks/use-live-data";
 import { motion } from "framer-motion";
 import { useState } from "react";
@@ -32,7 +33,7 @@ function GaugeRing({ value, label, color, icon: Icon }: { value: number; label: 
 
 export default function Monitoring() {
   const { metrics: serverMetrics, paused, setPaused, trafficHistory } = useLiveServerMetrics(2000);
-  const pingResults = useLivePing(4000);
+  const { results: pingResults, paused: pingPaused, setPaused: setPingPaused } = useLivePing(4000);
   const [serviceStatus, setServiceStatus] = useState<"running" | "stopped" | "unknown">(serverMetrics.status);
   const [flushState, setFlushState] = useState<"idle" | "flushing" | "ok" | "fail">("idle");
 
@@ -259,7 +260,10 @@ export default function Monitoring() {
           <h3 className="text-sm font-semibold flex items-center gap-2">
             <Activity className="h-4 w-4 text-primary" /> Upstream DNS Latency
           </h3>
-          <span className="text-[10px] text-muted-foreground font-mono">Live ping every 4s</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] text-muted-foreground font-mono">{pingPaused ? "Paused" : "Live ping every 4s"}</span>
+            <Switch checked={!pingPaused} onCheckedChange={(v) => setPingPaused(!v)} />
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {pingResults.map((r) => {

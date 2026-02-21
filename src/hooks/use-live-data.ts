@@ -263,8 +263,10 @@ export function useLivePing(intervalMs = 4000) {
   const [results, setResults] = useState<PingResult[]>(() =>
     UPSTREAM_SERVERS.map((s) => ({ ...s, latency: null, status: "pending" as const, history: [] }))
   );
+  const [paused, setPaused] = useState(false);
 
   useEffect(() => {
+    if (paused) return;
     let active = true;
 
     const ping = async () => {
@@ -302,9 +304,9 @@ export function useLivePing(intervalMs = 4000) {
     ping();
     const timer = setInterval(ping, intervalMs);
     return () => { active = false; clearInterval(timer); };
-  }, [intervalMs]);
+  }, [intervalMs, paused]);
 
-  return results;
+  return { results, paused, setPaused };
 }
 
 // ─── Query Logs ───────────────────────────────────────────────────────────────
