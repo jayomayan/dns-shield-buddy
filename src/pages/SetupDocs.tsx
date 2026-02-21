@@ -251,6 +251,87 @@ psql "postgresql://postgres:<your-password>@localhost:5432/postgres" \\
     warning: "Change ALL default passwords and JWT secrets in .env before starting. Never expose Supabase Studio to the public internet without authentication.",
   },
   {
+    id: "s8b",
+    title: "Configure CORS for Self-Hosted Supabase",
+    description: "Allow cross-origin requests so DNSGuard's web UI can reach your self-hosted Supabase API.",
+    command: `# ── Option A: Edit Kong config (recommended) ────────────────────
+# In your supabase/docker directory:
+cd supabase/docker
+
+# Edit the Kong declarative config:
+nano volumes/api/kong.yml
+
+# Add the cors plugin to the "api" service's plugins list.
+# Find the 'plugins:' block under the route that serves /rest/v1/
+# and add:
+#
+#   - name: cors
+#     config:
+#       origins:
+#         - "https://your-dnsguard-domain.com"
+#         - "http://localhost:5173"
+#       methods:
+#         - GET
+#         - POST
+#         - PUT
+#         - PATCH
+#         - DELETE
+#         - OPTIONS
+#       headers:
+#         - Authorization
+#         - Content-Type
+#         - apikey
+#         - x-client-info
+#       credentials: true
+#       max_age: 3600
+
+# Restart Kong to apply changes:
+sudo docker compose restart kong
+
+# ── Option B: Reverse-proxy with nginx (alternative) ───────────
+# Serve both DNSGuard UI and Supabase under the same domain
+# to avoid CORS entirely:
+#
+# server {
+#     listen 443 ssl;
+#     server_name dnsguard.yourdomain.com;
+#
+#     # DNSGuard frontend
+#     location / {
+#         proxy_pass http://127.0.0.1:3000;
+#     }
+#
+#     # Supabase API — same origin, no CORS needed
+#     location /supabase/ {
+#         rewrite ^/supabase/(.*) /\$1 break;
+#         proxy_pass http://127.0.0.1:8000;
+#         proxy_set_header Host \$host;
+#     }
+# }
+
+# ── Verify CORS headers ────────────────────────────────────────
+curl -i -X OPTIONS \\
+  -H "Origin: https://your-dnsguard-domain.com" \\
+  -H "Access-Control-Request-Method: GET" \\
+  -H "Access-Control-Request-Headers: apikey,authorization,content-type" \\
+  http://localhost:8000/rest/v1/
+
+# You should see:
+#   Access-Control-Allow-Origin: https://your-dnsguard-domain.com
+#   Access-Control-Allow-Methods: GET, POST, ...
+#   Access-Control-Allow-Headers: authorization, apikey, ...`,
+    details: [
+      "CORS is required because the browser blocks requests from one origin (your DNSGuard app) to another (your Supabase API)",
+      "Option A edits Kong's declarative config to add the CORS plugin — set origins to your DNSGuard domain",
+      "Option B uses nginx as a reverse-proxy so both services share the same domain, eliminating CORS entirely",
+      "Replace 'https://your-dnsguard-domain.com' with your actual DNSGuard URL in all configs",
+      "For development, you can add 'http://localhost:5173' as an additional allowed origin",
+      "If using Option B, update your self-hosted Supabase URL in Settings to the proxied path (e.g. https://dnsguard.yourdomain.com/supabase)",
+      "After changes, use the 'Test Connection' button in Settings → Backend Mode to verify it works",
+    ],
+    warning: "Never use 'Access-Control-Allow-Origin: *' in production. Always restrict origins to your actual DNSGuard domain(s).",
+  },
+  {
     id: "s9",
     title: "Verify & Test",
     description: "Confirm everything is working correctly.",
