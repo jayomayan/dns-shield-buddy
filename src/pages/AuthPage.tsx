@@ -10,16 +10,10 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [oktaAvailable, setOktaAvailable] = useState(false);
   const [oktaLoading, setOktaLoading] = useState(false);
 
   useEffect(() => {
-    const init = async () => {
-      if (!isLoaded()) await loadConfig();
-      const cfg = getOktaConfig();
-      setOktaAvailable(!!cfg?.enabled);
-    };
-    init();
+    if (!isLoaded()) loadConfig();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -66,7 +60,7 @@ export default function AuthPage() {
             Your settings are stored in the cloud and sync across all browsers.
           </p>
 
-          {oktaAvailable && (
+          {(
             <>
               <button
                 onClick={handleOktaLogin}
