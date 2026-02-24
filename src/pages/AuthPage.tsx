@@ -11,9 +11,12 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [oktaLoading, setOktaLoading] = useState(false);
+  const [configLoading, setConfigLoading] = useState(!isLoaded());
 
   useEffect(() => {
-    if (!isLoaded()) loadConfig();
+    if (!isLoaded()) {
+      loadConfig().finally(() => setConfigLoading(false));
+    }
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -64,11 +67,11 @@ export default function AuthPage() {
             <>
               <button
                 onClick={handleOktaLogin}
-                disabled={oktaLoading}
+                disabled={oktaLoading || configLoading}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-accent text-accent-foreground border border-border rounded-lg text-sm font-medium hover:bg-accent/80 transition-colors disabled:opacity-50 mb-4"
               >
-                {oktaLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
-                Login with Okta
+                {(oktaLoading || configLoading) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
+                {configLoading ? "Loading Okta…" : "Login with Okta"}
               </button>
               <div className="relative mb-4">
                 <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
