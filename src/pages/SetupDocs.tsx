@@ -793,6 +793,70 @@ function applyRules(rules) {
   });
 }
 
+// ─── Read current rules (GET /rules) ─────────────────────────────────────────
+// Reads the persisted ruleset from SQLite/JSON settings so the UI can reload
+// the exact same categories, blacklist, and whitelist on any browser/session.
+function readRules() {
+  // First try SQLite app_settings for the canonical 'dns_rules' key
+  try {
+    var path = require('path');
+    var Database = require(path.join(__dirname, 'node_modules', 'better-sqlite3'));
+    var DB_PATH = process.env.DB_PATH || '/var/lib/dnsguard/dnsguard.db';
+    var db = new Database(DB_PATH, { readonly: true });
+    ensureSettingsTableSQLite(db);
+    var row = db.prepare("SELECT value FROM app_settings WHERE key = 'dns_rules'").get();
+    db.close();
+    if (row) return JSON.parse(row.value);
+  } catch(e) { /* SQLite not available */ }
+  // Fallback: JSON settings file
+  try {
+    var raw = fs.readFileSync(SETTINGS_FILE, 'utf8');
+    var all = JSON.parse(raw);
+    if (all.dns_rules) return all.dns_rules;
+  } catch(e) {}
+  // Last resort: parse the blacklist conf to return at least the blocked domains
+  try {
+    var confPath = '/etc/unbound/local.d/dnsguard-blacklist.conf';
+    if (fs.existsSync(confPath)) {
+      var content = fs.readFileSync(confPath, 'utf8');
+      var domains = [];
+      content.split('\\n').forEach(function(line) {
+        var m = line.match(/^local-zone:\\s+"([^"]+)"\\s+always_refuse/);
+        if (m) domains.push(m[1]);
+      });
+      return {
+        blacklist: domains.map(function(d) { return { domain: d, enabled: true, category: 'Custom' }; }),
+        whitelist: [],
+        categories: [],
+      };
+    }
+  } catch(e) {}
+  return { blacklist: [], whitelist: [], categories: [] };
+}
+
+// Persist rules to SQLite/JSON so GET /rules returns them on next load
+function persistRules(rules) {
+  try {
+    var path = require('path');
+    var Database = require(path.join(__dirname, 'node_modules', 'better-sqlite3'));
+    var DB_PATH = process.env.DB_PATH || '/var/lib/dnsguard/dnsguard.db';
+    fs.mkdirSync(require('path').dirname(DB_PATH), { recursive: true });
+    var db = new Database(DB_PATH);
+    ensureSettingsTableSQLite(db);
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('dns_rules', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(JSON.stringify(rules));
+    db.close();
+  } catch(e) {
+    // Fallback: JSON file
+    try {
+      fs.mkdirSync(require('path').dirname(SETTINGS_FILE), { recursive: true });
+      var existing = {};
+      try { existing = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); } catch(fe) {}
+      existing.dns_rules = rules;
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(existing, null, 2), 'utf8');
+    } catch(fe) {}
+  }
+}
+
 // ─── Logs Summary (for dashboard hourly chart + top blocked) ─────────────────
 // Reads last 24h of logs and returns per-hour counts + top blocked domains.
 function getLogsSummary() {
