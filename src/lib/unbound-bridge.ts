@@ -120,6 +120,13 @@ function authFetch(url: string, init?: RequestInit): Promise<Response> {
   });
 }
 
+/** Fetch the current ruleset from the bridge (GET /rules). */
+export async function fetchRules(): Promise<RulesPayload> {
+  const res = await authFetch(`${baseUrl()}/rules`, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`Bridge /rules GET returned ${res.status}`);
+  return await res.json();
+}
+
 /** Fetch live stats from the bridge (GET /stats). */
 export async function fetchUnboundStats(): Promise<UnboundLiveStats> {
   const res = await authFetch(`${baseUrl()}/stats`, { signal: AbortSignal.timeout(3000) });
