@@ -4,7 +4,7 @@ import {
   Gamepad2, MessageCircle, Video, ShoppingBag, Skull, Bug, BarChart3,
   Mail, Pickaxe, Globe, Layers, ChevronDown, ChevronUp, RotateCcw,
   Pencil, X, Check, FolderPlus, RefreshCw, CheckCircle2, XCircle, Loader2,
-  FlaskConical, Clock, Server, AlertCircle, ChevronRight,
+  FlaskConical, Clock, Server, AlertCircle, ChevronRight, HardDrive,
 } from "lucide-react";
 import { whitelistRules, blacklistRules, categoryBlacklists, type CategoryBlacklist } from "@/lib/mock-data";
 import { motion, AnimatePresence } from "framer-motion";
