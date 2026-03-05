@@ -401,6 +401,7 @@ export default function DnsRules() {
   });
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
   const [rulesLoading, setRulesLoading] = useState(true);
+  const [rulesSource, setRulesSource] = useState<"bridge" | "cache" | "defaults">("defaults");
 
   // New category form state
   const [showNewCategory, setShowNewCategory] = useState(false);
@@ -412,9 +413,19 @@ export default function DnsRules() {
   useEffect(() => {
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
+    
+    // Determine if we had a localStorage cache
+    const hadCache = !!(localStorage.getItem("dns-category-blacklists") || localStorage.getItem("dns-blacklist-rules") || localStorage.getItem("dns-whitelist-rules"));
+    if (hadCache) setRulesSource("cache");
+
     fetchRules()
       .then((payload) => {
-        // Merge bridge data into state
+        const hasBridgeData = (payload.categories?.length > 0) || (payload.blacklist?.length > 0) || (payload.whitelist?.length > 0);
+        if (!hasBridgeData) {
+          // Bridge returned empty — keep whatever we loaded from cache/defaults
+          return;
+        }
+        setRulesSource("bridge");
         if (payload.categories?.length) {
           setCategories(payload.categories.map((c, i) => ({
             id: `cat-${i}`,
@@ -444,6 +455,7 @@ export default function DnsRules() {
       })
       .catch((err) => {
         console.warn("Could not fetch rules from bridge, using local cache:", err.message);
+        // Keep cache/defaults source
       })
       .finally(() => setRulesLoading(false));
   }, []);
