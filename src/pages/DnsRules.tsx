@@ -400,11 +400,53 @@ export default function DnsRules() {
     return saved ? JSON.parse(saved) : categoryBlacklists;
   });
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
+  const [rulesLoading, setRulesLoading] = useState(true);
 
   // New category form state
   const [showNewCategory, setShowNewCategory] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatDesc, setNewCatDesc] = useState("");
+
+  // ── Load rules from bridge on mount (source of truth) ─────────────────────
+  const initialLoadDone = useRef(false);
+  useEffect(() => {
+    if (initialLoadDone.current) return;
+    initialLoadDone.current = true;
+    fetchRules()
+      .then((payload) => {
+        // Merge bridge data into state
+        if (payload.categories?.length) {
+          setCategories(payload.categories.map((c, i) => ({
+            id: `cat-${i}`,
+            name: c.name,
+            description: `Category: ${c.name}`,
+            enabled: c.enabled,
+            domains: c.domains,
+          })));
+        }
+        if (payload.blacklist?.length) {
+          setBRules(payload.blacklist.map((r, i) => ({
+            id: `bl-${i}`,
+            domain: r.domain,
+            category: r.category ?? "Custom",
+            createdAt: new Date().toISOString().split("T")[0],
+            enabled: r.enabled,
+          })));
+        }
+        if (payload.whitelist?.length) {
+          setWRules(payload.whitelist.map((r, i) => ({
+            id: `wl-${i}`,
+            domain: r.domain,
+            createdAt: new Date().toISOString().split("T")[0],
+            enabled: r.enabled,
+          })));
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not fetch rules from bridge, using local cache:", err.message);
+      })
+      .finally(() => setRulesLoading(false));
+  }, []);
 
   useEffect(() => { localStorage.setItem("dns-category-blacklists", JSON.stringify(categories)); }, [categories]);
   useEffect(() => { localStorage.setItem("dns-whitelist-rules", JSON.stringify(wRules)); }, [wRules]);
@@ -435,12 +477,13 @@ export default function DnsRules() {
     resetSyncRef.current = setTimeout(() => setSyncStatus("idle"), 4000);
   }, []);
 
-  // Debounce sync: 800ms after any rule change
+  // Debounce sync: 800ms after any rule change — skip during initial load
   useEffect(() => {
+    if (rulesLoading) return;
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => syncToUnbound(categories, bRules, wRules), 800);
     return () => { if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current); };
-  }, [categories, bRules, wRules, syncToUnbound]);
+  }, [categories, bRules, wRules, syncToUnbound, rulesLoading]);
 
   const filteredCustom = bRules.filter((r) => r.domain.toLowerCase().includes(search.toLowerCase()));
   const filteredWhitelist = wRules.filter((r) => r.domain.toLowerCase().includes(search.toLowerCase()));
