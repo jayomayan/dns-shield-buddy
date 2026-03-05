@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { whitelistRules, blacklistRules, categoryBlacklists, type CategoryBlacklist } from "@/lib/mock-data";
 import { motion, AnimatePresence } from "framer-motion";
-import { pushRules, fetchDnsQuery, type DnsQueryResult } from "@/lib/unbound-bridge";
+import { pushRules, fetchRules, fetchDnsQuery, type DnsQueryResult } from "@/lib/unbound-bridge";
 
 type Tab = "categories" | "custom" | "whitelist";
 
