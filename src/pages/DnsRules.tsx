@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { whitelistRules, blacklistRules, categoryBlacklists, type CategoryBlacklist } from "@/lib/mock-data";
 import { motion, AnimatePresence } from "framer-motion";
-import { pushRules, fetchDnsQuery, type DnsQueryResult } from "@/lib/unbound-bridge";
+import { pushRules, fetchRules, fetchDnsQuery, type DnsQueryResult } from "@/lib/unbound-bridge";
 
 type Tab = "categories" | "custom" | "whitelist";
 
@@ -400,11 +400,53 @@ export default function DnsRules() {
     return saved ? JSON.parse(saved) : categoryBlacklists;
   });
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
+  const [rulesLoading, setRulesLoading] = useState(true);
 
   // New category form state
   const [showNewCategory, setShowNewCategory] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatDesc, setNewCatDesc] = useState("");
+
+  // ── Load rules from bridge on mount (source of truth) ─────────────────────
+  const initialLoadDone = useRef(false);
+  useEffect(() => {
+    if (initialLoadDone.current) return;
+    initialLoadDone.current = true;
+    fetchRules()
+      .then((payload) => {
+        // Merge bridge data into state
+        if (payload.categories?.length) {
+          setCategories(payload.categories.map((c, i) => ({
+            id: `cat-${i}`,
+            name: c.name,
+            description: `Category: ${c.name}`,
+            enabled: c.enabled,
+            domains: c.domains,
+          })));
+        }
+        if (payload.blacklist?.length) {
+          setBRules(payload.blacklist.map((r, i) => ({
+            id: `bl-${i}`,
+            domain: r.domain,
+            category: r.category ?? "Custom",
+            createdAt: new Date().toISOString().split("T")[0],
+            enabled: r.enabled,
+          })));
+        }
+        if (payload.whitelist?.length) {
+          setWRules(payload.whitelist.map((r, i) => ({
+            id: `wl-${i}`,
+            domain: r.domain,
+            createdAt: new Date().toISOString().split("T")[0],
+            enabled: r.enabled,
+          })));
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not fetch rules from bridge, using local cache:", err.message);
+      })
+      .finally(() => setRulesLoading(false));
+  }, []);
 
   useEffect(() => { localStorage.setItem("dns-category-blacklists", JSON.stringify(categories)); }, [categories]);
   useEffect(() => { localStorage.setItem("dns-whitelist-rules", JSON.stringify(wRules)); }, [wRules]);
@@ -435,12 +477,13 @@ export default function DnsRules() {
     resetSyncRef.current = setTimeout(() => setSyncStatus("idle"), 4000);
   }, []);
 
-  // Debounce sync: 800ms after any rule change
+  // Debounce sync: 800ms after any rule change — skip during initial load
   useEffect(() => {
+    if (rulesLoading) return;
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => syncToUnbound(categories, bRules, wRules), 800);
     return () => { if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current); };
-  }, [categories, bRules, wRules, syncToUnbound]);
+  }, [categories, bRules, wRules, syncToUnbound, rulesLoading]);
 
   const filteredCustom = bRules.filter((r) => r.domain.toLowerCase().includes(search.toLowerCase()));
   const filteredWhitelist = wRules.filter((r) => r.domain.toLowerCase().includes(search.toLowerCase()));
@@ -513,6 +556,15 @@ export default function DnsRules() {
   };
 
   const totalBlocked = categories.filter((c) => c.enabled).reduce((acc, c) => acc + c.domains.length, 0) + bRules.filter((r) => r.enabled).length;
+
+  if (rulesLoading) {
+    return (
+      <div className="flex items-center justify-center py-20 gap-3 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        <span className="text-sm">Loading DNS rules from bridge…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
