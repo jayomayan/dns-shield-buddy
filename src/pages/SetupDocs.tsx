@@ -1119,12 +1119,15 @@ var server = http.createServer(function(req, res) {
       return pingServers().then(function(d) { json(res, d); });
     if (req.method === 'POST' && url.pathname === '/cache/flush')
       return flushCache().then(function(d) { json(res, d); });
+    if (req.method === 'GET' && url.pathname === '/rules')
+      return json(res, readRules());
     if (req.method === 'POST' && url.pathname === '/rules') {
       var body = '';
       req.on('data', function(d) { body += d; });
       req.on('end', function() {
         try {
           var rules = JSON.parse(body);
+          persistRules(rules);   // save full ruleset for GET /rules
           applyRules(rules).then(function(result) { json(res, result); });
         } catch(e) {
           json(res, { ok: false, message: 'Invalid JSON: ' + e.message }, 400);
