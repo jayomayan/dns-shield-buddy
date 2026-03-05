@@ -557,6 +557,15 @@ export default function DnsRules() {
 
   const totalBlocked = categories.filter((c) => c.enabled).reduce((acc, c) => acc + c.domains.length, 0) + bRules.filter((r) => r.enabled).length;
 
+  if (rulesLoading) {
+    return (
+      <div className="flex items-center justify-center py-20 gap-3 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        <span className="text-sm">Loading DNS rules from bridge…</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Tabs */}
