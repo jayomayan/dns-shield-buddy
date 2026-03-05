@@ -608,6 +608,19 @@ export default function DnsRules() {
         </button>
 
         <div className="ml-auto flex items-center gap-3">
+          {/* Rules source indicator */}
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+            rulesSource === "bridge" ? "bg-success/10 text-success border-success/20" :
+            rulesSource === "cache" ? "bg-warning/10 text-warning border-warning/20" :
+            "bg-muted text-muted-foreground border-border"
+          }`}>
+            {rulesSource === "bridge" ? <Server className="h-3 w-3" /> :
+             rulesSource === "cache" ? <HardDrive className="h-3 w-3" /> :
+             <AlertCircle className="h-3 w-3" />}
+            {rulesSource === "bridge" ? "Loaded from bridge" :
+             rulesSource === "cache" ? "Loaded from local cache" :
+             "Using defaults"}
+          </div>
           <button
             onClick={resetToDefaults}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
