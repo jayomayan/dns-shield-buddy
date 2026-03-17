@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Search, Download, Pause, Play, Radio } from "lucide-react";
 import { useLiveQueryLogs } from "@/hooks/use-live-data";
+import { usePollingInterval } from "@/hooks/use-polling-interval";
 
 export default function QueryLogs() {
   const { seconds: pollSec } = usePollingInterval();

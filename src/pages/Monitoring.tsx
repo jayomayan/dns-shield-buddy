@@ -1,6 +1,7 @@
 import { Cpu, HardDrive, MemoryStick, Wifi, Play, Square, RotateCcw, Server, Pause, Globe, Activity, CheckCircle2, XCircle, Clock, Trash2, Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useLiveServerMetrics, useLivePing } from "@/hooks/use-live-data";
+import { usePollingInterval } from "@/hooks/use-polling-interval";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
