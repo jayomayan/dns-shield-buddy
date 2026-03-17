@@ -8,6 +8,7 @@ import { saveOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
 
 import { Json } from "@/integrations/supabase/types";
 import { getConfig, saveConfig, reloadConfig, type AppConfig } from "@/lib/settings-store";
+import { usePollingInterval } from "@/hooks/use-polling-interval";
 
 interface EndpointResult {
   path: string;
