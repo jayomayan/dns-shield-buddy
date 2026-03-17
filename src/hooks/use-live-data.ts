@@ -15,9 +15,9 @@ export type DataSource = "live" | "connecting";
 // ─── Dashboard stats ─────────────────────────────────────────────────────────
 
 export function useLiveDashboard(intervalMs = 3000) {
-  const [stats, setStats] = useState({ ...baseStats });
-  const [hourly, setHourly] = useState([...baseHourly]);
-  const [blocked, setBlocked] = useState([...topBlockedDomains]);
+  const [stats, setStats] = useState({ totalQueries: 0, allowedQueries: 0, blockedQueries: 0, cachedQueries: 0, avgResponseTime: 0, uptime: 0 });
+  const [hourly, setHourly] = useState<{ hour: string; allowed: number; blocked: number }[]>([]);
+  const [blocked, setBlocked] = useState<{ domain: string; count: number; category: string }[]>([]);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [paused, setPaused] = useState(false);
   const [dataSource, setDataSource] = useState<DataSource>("connecting");
