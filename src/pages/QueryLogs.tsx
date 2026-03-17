@@ -1,9 +1,11 @@
 import { useState, useMemo } from "react";
 import { Search, Download, Pause, Play, Radio } from "lucide-react";
 import { useLiveQueryLogs } from "@/hooks/use-live-data";
+import { usePollingInterval } from "@/hooks/use-polling-interval";
 
 export default function QueryLogs() {
-  const { logs, paused, setPaused, newCount, dataSource } = useLiveQueryLogs(2000);
+  const { seconds: pollSec } = usePollingInterval();
+  const { logs, paused, setPaused, newCount, dataSource } = useLiveQueryLogs(pollSec * 1000);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "allowed" | "blocked">("all");
   const [typeFilter, setTypeFilter] = useState("all");

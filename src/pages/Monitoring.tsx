@@ -1,6 +1,7 @@
 import { Cpu, HardDrive, MemoryStick, Wifi, Play, Square, RotateCcw, Server, Pause, Globe, Activity, CheckCircle2, XCircle, Clock, Trash2, Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useLiveServerMetrics, useLivePing } from "@/hooks/use-live-data";
+import { usePollingInterval } from "@/hooks/use-polling-interval";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
@@ -32,8 +33,9 @@ function GaugeRing({ value, label, color, icon: Icon }: { value: number; label: 
 }
 
 export default function Monitoring() {
-  const { metrics: serverMetrics, paused, setPaused, trafficHistory } = useLiveServerMetrics(2000);
-  const { results: pingResults, paused: pingPaused, setPaused: setPingPaused } = useLivePing(4000);
+  const { seconds: pollSec } = usePollingInterval();
+  const { metrics: serverMetrics, paused, setPaused, trafficHistory } = useLiveServerMetrics(pollSec * 1000);
+  const { results: pingResults, paused: pingPaused, setPaused: setPingPaused } = useLivePing(pollSec * 1000 + 1000);
   const [serviceStatus, setServiceStatus] = useState<"running" | "stopped" | "unknown">(serverMetrics.status);
   const [flushState, setFlushState] = useState<"idle" | "flushing" | "ok" | "fail">("idle");
 

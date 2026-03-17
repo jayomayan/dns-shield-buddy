@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, LogIn, ExternalLink, RefreshCw } from "lucide-react";
+import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, LogIn, ExternalLink, RefreshCw, Timer } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBridgeUrl, getBridgeHeaders } from "@/hooks/use-bridge-url";
@@ -8,6 +8,7 @@ import { saveOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
 
 import { Json } from "@/integrations/supabase/types";
 import { getConfig, saveConfig, reloadConfig, type AppConfig } from "@/lib/settings-store";
+import { usePollingInterval } from "@/hooks/use-polling-interval";
 
 interface EndpointResult {
   path: string;
@@ -113,6 +114,7 @@ async function saveSettingsToStore(patch: AppSettings): Promise<boolean> {
 export default function SettingsPage() {
   // Bridge connection (URL + key stored in localStorage only for bootstrapping)
   const { url: bridgeUrl, setUrl: setBridgeUrlState, apiKey: bridgeApiKey, setApiKey: setBridgeApiKeyState } = useBridgeUrl();
+  const { seconds: pollSeconds, setSeconds: setPollSeconds, min: pollMin, max: pollMax } = usePollingInterval();
   const [bridgeInput, setBridgeInput] = useState(bridgeUrl);
   const [apiKeyInput, setApiKeyInput] = useState(bridgeApiKey);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -919,7 +921,40 @@ export default function SettingsPage() {
         </div>
       </motion.div>
 
-      {/* Notifications */}
+      {/* Data Refresh Interval */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }} className="bg-card border border-border rounded-lg p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Timer className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Data Refresh Interval</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">How often the dashboard, logs, and monitoring pages poll for new data.</p>
+        <div className="flex items-center gap-4">
+          <input
+            type="range"
+            min={pollMin}
+            max={pollMax}
+            value={pollSeconds}
+            onChange={(e) => setPollSeconds(Number(e.target.value))}
+            className="flex-1 accent-primary"
+          />
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={pollMin}
+              max={pollMax}
+              value={pollSeconds}
+              onChange={(e) => setPollSeconds(Number(e.target.value))}
+              className="w-16 px-2 py-1.5 bg-muted border border-border rounded-lg text-sm font-mono text-center focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span className="text-xs text-muted-foreground">seconds</span>
+          </div>
+        </div>
+        <div className="flex justify-between mt-2 text-[10px] text-muted-foreground font-mono">
+          <span>{pollMin}s (fastest)</span>
+          <span>{pollMax}s (slowest)</span>
+        </div>
+      </motion.div>
+
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="bg-card border border-border rounded-lg p-6">
         <div className="flex items-center gap-2 mb-1">
           <Bell className="h-4 w-4 text-primary" />
