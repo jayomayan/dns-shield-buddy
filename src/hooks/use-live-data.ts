@@ -219,16 +219,7 @@ export function useLivePing(intervalMs = 4000) {
         );
       } catch {
         if (!active) return;
-        // Fallback: simulate
-        setResults((prev) =>
-          prev.map((r) => {
-            const timeout = Math.random() > 0.96;
-            const base = r.server.startsWith("1.1") ? 12 : r.server.startsWith("8.8") ? 18 : r.server.startsWith("9.9") ? 22 : 28;
-            const latency = timeout ? null : Math.max(1, Math.round(base + (Math.random() * 20 - 5)));
-            const newHistory = [...r.history, latency ?? 0].slice(-20);
-            return { ...r, latency, status: timeout ? "timeout" : "ok", history: newHistory };
-          })
-        );
+        // Stay in "pending" state, will retry on next interval
       }
     };
 
