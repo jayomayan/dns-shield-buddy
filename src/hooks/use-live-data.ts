@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { getPollingIntervalMs } from "@/hooks/use-polling-interval";
-import { queryStats as baseStats, hourlyData as baseHourly, topBlockedDomains, serverMetrics, type QueryLog } from "@/lib/mock-data";
+import { type QueryLog } from "@/lib/mock-data";
 import {
   fetchUnboundStats,
   fetchUnboundInfo,
@@ -10,39 +10,14 @@ import {
   type UnboundLiveStats,
 } from "@/lib/unbound-bridge";
 
-const DOMAINS = [
-  "google.com", "ads.doubleclick.net", "github.com", "tracker.analytics.io",
-  "slack.com", "malware-c2.evil.com", "office365.com", "phishing.badsite.xyz",
-  "aws.amazon.com", "cdn.jsdelivr.net", "api.stripe.com", "fonts.googleapis.com",
-  "zoom.us", "notion.so", "figma.com", "vercel.app", "netlify.com",
-  "spyware.collector.net", "adnetwork.bid", "clickbait.news.xyz",
-];
-
-const TYPES: QueryLog["type"][] = ["A", "AAAA", "CNAME", "MX", "TXT"];
-
-function generateLog(id: number): QueryLog {
-  const domain = DOMAINS[Math.floor(Math.random() * DOMAINS.length)];
-  const isBlocked = ["ads.doubleclick.net", "tracker.analytics.io", "malware-c2.evil.com",
-    "phishing.badsite.xyz", "spyware.collector.net", "adnetwork.bid", "clickbait.news.xyz"].includes(domain);
-  return {
-    id: `live-${Date.now()}-${id}`,
-    timestamp: new Date().toISOString(),
-    clientIp: `192.168.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 255)}`,
-    domain,
-    type: TYPES[Math.floor(Math.random() * TYPES.length)],
-    status: isBlocked ? "blocked" : "allowed",
-    responseTime: Math.floor(Math.random() * 45 + 2),
-  };
-}
-
-export type DataSource = "live" | "mock" | "connecting";
+export type DataSource = "live" | "connecting";
 
 // ─── Dashboard stats ─────────────────────────────────────────────────────────
 
 export function useLiveDashboard(intervalMs = 3000) {
-  const [stats, setStats] = useState({ ...baseStats });
-  const [hourly, setHourly] = useState([...baseHourly]);
-  const [blocked, setBlocked] = useState([...topBlockedDomains]);
+  const [stats, setStats] = useState({ totalQueries: 0, allowedQueries: 0, blockedQueries: 0, cachedQueries: 0, avgResponseTime: 0, uptime: 0 });
+  const [hourly, setHourly] = useState<{ hour: string; allowed: number; blocked: number }[]>([]);
+  const [blocked, setBlocked] = useState<{ domain: string; count: number; category: string }[]>([]);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [paused, setPaused] = useState(false);
   const [dataSource, setDataSource] = useState<DataSource>("connecting");
@@ -111,32 +86,7 @@ export function useLiveDashboard(intervalMs = 3000) {
         setDataSource("live");
       } catch {
         if (!active) return;
-        setDataSource((prev) => (prev === "connecting" ? "mock" : prev === "live" ? "mock" : prev));
-        const newAllowed = Math.floor(Math.random() * 200 + 50);
-        const newBlocked = Math.floor(Math.random() * 60 + 10);
-        setStats((prev) => ({
-          ...prev,
-          totalQueries: prev.totalQueries + newAllowed + newBlocked,
-          allowedQueries: prev.allowedQueries + newAllowed,
-          blockedQueries: prev.blockedQueries + newBlocked,
-          cachedQueries: prev.cachedQueries + Math.floor(Math.random() * 80),
-          avgResponseTime: +(Math.random() * 5 + 10).toFixed(1),
-        }));
-        setHourly((prev) => {
-          const updated = [...prev];
-          const lastIdx = updated.length - 1;
-          updated[lastIdx] = {
-            ...updated[lastIdx],
-            allowed: updated[lastIdx].allowed + newAllowed,
-            blocked: updated[lastIdx].blocked + newBlocked,
-          };
-          return updated;
-        });
-        setBlocked((prev) =>
-          prev.map((d) => ({ ...d, count: d.count + Math.floor(Math.random() * 20) }))
-            .sort((a, b) => b.count - a.count)
-        );
-        setLastUpdate(new Date());
+        // Stay in "connecting" state, will retry on next interval
       }
     };
 
@@ -157,7 +107,7 @@ export interface NetworkTrafficPoint {
 }
 
 export function useLiveServerMetrics(intervalMs = 3000) {
-  const [metrics, setMetrics] = useState({ ...serverMetrics });
+  const [metrics, setMetrics] = useState({ cpu: 0, memory: 0, disk: 0, networkIn: 0, networkOut: 0, status: "stopped" as "running" | "stopped", hostname: "", version: "", os: "", resolver: "", ipAddress: "", publicIp: "", netmask: "", gateway: "", macAddress: "", dnsInterface: "", dnsPort: 0, apiPort: 0 });
   const [paused, setPaused] = useState(false);
   const [dataSource, setDataSource] = useState<DataSource>("connecting");
   const [trafficHistory, setTrafficHistory] = useState<NetworkTrafficPoint[]>(() =>
@@ -209,27 +159,7 @@ export function useLiveServerMetrics(intervalMs = 3000) {
         setDataSource("live");
       } catch {
         if (!active) return;
-        setDataSource((prev) => (prev === "connecting" ? "mock" : prev));
-        // Simulate drift when bridge offline
-        setMetrics((prev) => ({
-          ...prev,
-          cpu: Math.min(100, Math.max(5, prev.cpu + Math.floor(Math.random() * 11 - 5))),
-          memory: Math.min(100, Math.max(10, prev.memory + Math.floor(Math.random() * 7 - 3))),
-          disk: Math.min(100, Math.max(20, prev.disk + Math.floor(Math.random() * 3 - 1))),
-          networkIn: +(Math.max(10, prev.networkIn + (Math.random() * 20 - 10))).toFixed(1),
-          networkOut: +(Math.max(5, prev.networkOut + (Math.random() * 15 - 7))).toFixed(1),
-        }));
-        setTrafficHistory((prev) => {
-          const last = prev[prev.length - 1];
-          return [
-            ...prev.slice(-19),
-            {
-              time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-              inbound: +(Math.max(10, last.inbound + (Math.random() * 20 - 10))).toFixed(1),
-              outbound: +(Math.max(5, last.outbound + (Math.random() * 15 - 7))).toFixed(1),
-            },
-          ];
-        });
+        // Stay in "connecting" state, will retry on next interval
       }
     };
 
@@ -289,16 +219,7 @@ export function useLivePing(intervalMs = 4000) {
         );
       } catch {
         if (!active) return;
-        // Fallback: simulate
-        setResults((prev) =>
-          prev.map((r) => {
-            const timeout = Math.random() > 0.96;
-            const base = r.server.startsWith("1.1") ? 12 : r.server.startsWith("8.8") ? 18 : r.server.startsWith("9.9") ? 22 : 28;
-            const latency = timeout ? null : Math.max(1, Math.round(base + (Math.random() * 20 - 5)));
-            const newHistory = [...r.history, latency ?? 0].slice(-20);
-            return { ...r, latency, status: timeout ? "timeout" : "ok", history: newHistory };
-          })
-        );
+        // Stay in "pending" state, will retry on next interval
       }
     };
 
@@ -313,11 +234,7 @@ export function useLivePing(intervalMs = 4000) {
 // ─── Query Logs ───────────────────────────────────────────────────────────────
 
 export function useLiveQueryLogs(intervalMs = 2000) {
-  const [logs, setLogs] = useState<QueryLog[]>(() =>
-    Array.from({ length: 50 }, (_, i) => generateLog(i)).sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    )
-  );
+  const [logs, setLogs] = useState<QueryLog[]>([]);
   const [paused, setPaused] = useState(false);
   const [newCount, setNewCount] = useState(0);
   const [dataSource, setDataSource] = useState<DataSource>("connecting");
@@ -358,16 +275,7 @@ export function useLiveQueryLogs(intervalMs = 2000) {
         setDataSource("live");
       } catch {
         if (!active) return;
-        setDataSource((prev) => (prev === "connecting" ? "mock" : prev));
-        // Fall back to simulated new entries
-        const batch = Math.floor(Math.random() * 3) + 1;
-        const newLogs: QueryLog[] = [];
-        for (let i = 0; i < batch; i++) {
-          newLogs.push(generateLog(counterRef.current++));
-        }
-        setLogs((prev) => [...newLogs, ...prev].slice(0, 500));
-        setNewCount((prev) => prev + batch);
-        setTimeout(() => setNewCount(0), 2000);
+        // Stay in "connecting" state, will retry on next interval
       }
     };
 

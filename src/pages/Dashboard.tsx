@@ -38,8 +38,8 @@ export default function Dashboard() {
           <span className="text-[10px] text-muted-foreground/70 font-mono">
             Refreshing every {pollSec}s
           </span>
-          {dataSource === "mock" && !paused && (
-            <span className="text-[10px] text-warning/70 font-mono">Bridge offline — using simulated data</span>
+          {dataSource === "connecting" && !paused && (
+            <span className="text-[10px] text-warning/70 font-mono">Connecting to bridge…</span>
           )}
         </div>
         <button
