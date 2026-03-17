@@ -234,11 +234,7 @@ export function useLivePing(intervalMs = 4000) {
 // ─── Query Logs ───────────────────────────────────────────────────────────────
 
 export function useLiveQueryLogs(intervalMs = 2000) {
-  const [logs, setLogs] = useState<QueryLog[]>(() =>
-    Array.from({ length: 50 }, (_, i) => generateLog(i)).sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    )
-  );
+  const [logs, setLogs] = useState<QueryLog[]>([]);
   const [paused, setPaused] = useState(false);
   const [newCount, setNewCount] = useState(0);
   const [dataSource, setDataSource] = useState<DataSource>("connecting");
