@@ -35,6 +35,9 @@ export default function Dashboard() {
           <span className="text-[11px] text-muted-foreground font-mono">
             Last update: {lastUpdate.toLocaleTimeString()}
           </span>
+          <span className="text-[10px] text-muted-foreground/70 font-mono">
+            Refreshing every {pollSec}s
+          </span>
           {dataSource === "mock" && !paused && (
             <span className="text-[10px] text-warning/70 font-mono">Bridge offline — using simulated data</span>
           )}
