@@ -159,27 +159,7 @@ export function useLiveServerMetrics(intervalMs = 3000) {
         setDataSource("live");
       } catch {
         if (!active) return;
-        setDataSource((prev) => (prev === "connecting" ? "mock" : prev));
-        // Simulate drift when bridge offline
-        setMetrics((prev) => ({
-          ...prev,
-          cpu: Math.min(100, Math.max(5, prev.cpu + Math.floor(Math.random() * 11 - 5))),
-          memory: Math.min(100, Math.max(10, prev.memory + Math.floor(Math.random() * 7 - 3))),
-          disk: Math.min(100, Math.max(20, prev.disk + Math.floor(Math.random() * 3 - 1))),
-          networkIn: +(Math.max(10, prev.networkIn + (Math.random() * 20 - 10))).toFixed(1),
-          networkOut: +(Math.max(5, prev.networkOut + (Math.random() * 15 - 7))).toFixed(1),
-        }));
-        setTrafficHistory((prev) => {
-          const last = prev[prev.length - 1];
-          return [
-            ...prev.slice(-19),
-            {
-              time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-              inbound: +(Math.max(10, last.inbound + (Math.random() * 20 - 10))).toFixed(1),
-              outbound: +(Math.max(5, last.outbound + (Math.random() * 15 - 7))).toFixed(1),
-            },
-          ];
-        });
+        // Stay in "connecting" state, will retry on next interval
       }
     };
 
