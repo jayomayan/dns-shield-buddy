@@ -86,32 +86,7 @@ export function useLiveDashboard(intervalMs = 3000) {
         setDataSource("live");
       } catch {
         if (!active) return;
-        setDataSource((prev) => (prev === "connecting" ? "mock" : prev === "live" ? "mock" : prev));
-        const newAllowed = Math.floor(Math.random() * 200 + 50);
-        const newBlocked = Math.floor(Math.random() * 60 + 10);
-        setStats((prev) => ({
-          ...prev,
-          totalQueries: prev.totalQueries + newAllowed + newBlocked,
-          allowedQueries: prev.allowedQueries + newAllowed,
-          blockedQueries: prev.blockedQueries + newBlocked,
-          cachedQueries: prev.cachedQueries + Math.floor(Math.random() * 80),
-          avgResponseTime: +(Math.random() * 5 + 10).toFixed(1),
-        }));
-        setHourly((prev) => {
-          const updated = [...prev];
-          const lastIdx = updated.length - 1;
-          updated[lastIdx] = {
-            ...updated[lastIdx],
-            allowed: updated[lastIdx].allowed + newAllowed,
-            blocked: updated[lastIdx].blocked + newBlocked,
-          };
-          return updated;
-        });
-        setBlocked((prev) =>
-          prev.map((d) => ({ ...d, count: d.count + Math.floor(Math.random() * 20) }))
-            .sort((a, b) => b.count - a.count)
-        );
-        setLastUpdate(new Date());
+        // Stay in "connecting" state, will retry on next interval
       }
     };
 
