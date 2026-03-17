@@ -114,6 +114,7 @@ async function saveSettingsToStore(patch: AppSettings): Promise<boolean> {
 export default function SettingsPage() {
   // Bridge connection (URL + key stored in localStorage only for bootstrapping)
   const { url: bridgeUrl, setUrl: setBridgeUrlState, apiKey: bridgeApiKey, setApiKey: setBridgeApiKeyState } = useBridgeUrl();
+  const { seconds: pollSeconds, setSeconds: setPollSeconds, min: pollMin, max: pollMax } = usePollingInterval();
   const [bridgeInput, setBridgeInput] = useState(bridgeUrl);
   const [apiKeyInput, setApiKeyInput] = useState(bridgeApiKey);
   const [showApiKey, setShowApiKey] = useState(false);
