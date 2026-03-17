@@ -275,16 +275,7 @@ export function useLiveQueryLogs(intervalMs = 2000) {
         setDataSource("live");
       } catch {
         if (!active) return;
-        setDataSource((prev) => (prev === "connecting" ? "mock" : prev));
-        // Fall back to simulated new entries
-        const batch = Math.floor(Math.random() * 3) + 1;
-        const newLogs: QueryLog[] = [];
-        for (let i = 0; i < batch; i++) {
-          newLogs.push(generateLog(counterRef.current++));
-        }
-        setLogs((prev) => [...newLogs, ...prev].slice(0, 500));
-        setNewCount((prev) => prev + batch);
-        setTimeout(() => setNewCount(0), 2000);
+        // Stay in "connecting" state, will retry on next interval
       }
     };
 
