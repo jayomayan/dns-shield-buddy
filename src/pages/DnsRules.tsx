@@ -468,26 +468,46 @@ export default function DnsRules() {
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "ok" | "fail">("idle");
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resetSyncRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSyncedSnapshot = useRef<string>("");
+
+  const buildPayload = useCallback((
+    currentCategories: CategoryBlacklist[],
+    currentBRules: typeof bRules,
+    currentWRules: typeof wRules,
+  ) => ({
+    blacklist: currentBRules.map((r: any) => ({ domain: r.domain, enabled: r.enabled, category: r.category ?? "Custom" })),
+    whitelist: currentWRules.map((r: any) => ({ domain: r.domain, enabled: r.enabled })),
+    categories: currentCategories.map((c) => ({ name: c.name, enabled: c.enabled, domains: c.domains })),
+  }), []);
 
   const syncToUnbound = useCallback(async (
     currentCategories: CategoryBlacklist[],
     currentBRules: typeof bRules,
     currentWRules: typeof wRules,
   ) => {
+    const payload = buildPayload(currentCategories, currentBRules, currentWRules);
+    const snapshot = JSON.stringify(payload);
+    // Skip sync if nothing changed since last successful push
+    if (snapshot === lastSyncedSnapshot.current) return;
+
     setSyncStatus("syncing");
     try {
-      await pushRules({
-        blacklist: currentBRules.map((r) => ({ domain: r.domain, enabled: r.enabled, category: r.category ?? "Custom" })),
-        whitelist: currentWRules.map((r) => ({ domain: r.domain, enabled: r.enabled })),
-        categories: currentCategories.map((c) => ({ name: c.name, enabled: c.enabled, domains: c.domains })),
-      });
+      await pushRules(payload);
+      lastSyncedSnapshot.current = snapshot;
       setSyncStatus("ok");
     } catch {
       setSyncStatus("fail");
     }
     if (resetSyncRef.current) clearTimeout(resetSyncRef.current);
     resetSyncRef.current = setTimeout(() => setSyncStatus("idle"), 4000);
-  }, []);
+  }, [buildPayload]);
+
+  // Seed the snapshot after initial load so we don't immediately re-sync fetched data
+  useEffect(() => {
+    if (!rulesLoading && !lastSyncedSnapshot.current) {
+      lastSyncedSnapshot.current = JSON.stringify(buildPayload(categories, bRules, wRules));
+    }
+  }, [rulesLoading, categories, bRules, wRules, buildPayload]);
 
   // Debounce sync: 800ms after any rule change — skip during initial load
   useEffect(() => {
