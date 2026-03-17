@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { getPollingIntervalMs } from "@/hooks/use-polling-interval";
-import { queryStats as baseStats, hourlyData as baseHourly, topBlockedDomains, serverMetrics, type QueryLog } from "@/lib/mock-data";
+import { type QueryLog } from "@/lib/mock-data";
 import {
   fetchUnboundStats,
   fetchUnboundInfo,
@@ -10,32 +10,7 @@ import {
   type UnboundLiveStats,
 } from "@/lib/unbound-bridge";
 
-const DOMAINS = [
-  "google.com", "ads.doubleclick.net", "github.com", "tracker.analytics.io",
-  "slack.com", "malware-c2.evil.com", "office365.com", "phishing.badsite.xyz",
-  "aws.amazon.com", "cdn.jsdelivr.net", "api.stripe.com", "fonts.googleapis.com",
-  "zoom.us", "notion.so", "figma.com", "vercel.app", "netlify.com",
-  "spyware.collector.net", "adnetwork.bid", "clickbait.news.xyz",
-];
-
-const TYPES: QueryLog["type"][] = ["A", "AAAA", "CNAME", "MX", "TXT"];
-
-function generateLog(id: number): QueryLog {
-  const domain = DOMAINS[Math.floor(Math.random() * DOMAINS.length)];
-  const isBlocked = ["ads.doubleclick.net", "tracker.analytics.io", "malware-c2.evil.com",
-    "phishing.badsite.xyz", "spyware.collector.net", "adnetwork.bid", "clickbait.news.xyz"].includes(domain);
-  return {
-    id: `live-${Date.now()}-${id}`,
-    timestamp: new Date().toISOString(),
-    clientIp: `192.168.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 255)}`,
-    domain,
-    type: TYPES[Math.floor(Math.random() * TYPES.length)],
-    status: isBlocked ? "blocked" : "allowed",
-    responseTime: Math.floor(Math.random() * 45 + 2),
-  };
-}
-
-export type DataSource = "live" | "mock" | "connecting";
+export type DataSource = "live" | "connecting";
 
 // ─── Dashboard stats ─────────────────────────────────────────────────────────
 
