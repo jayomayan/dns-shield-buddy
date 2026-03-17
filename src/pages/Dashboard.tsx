@@ -4,8 +4,8 @@ import StatCard from "@/components/dashboard/StatCard";
 import { useLiveDashboard } from "@/hooks/use-live-data";
 import { motion, AnimatePresence } from "framer-motion";
 
-export default function Dashboard() {
-  const { stats, hourly, blocked, lastUpdate, paused, setPaused, dataSource } = useLiveDashboard(3000);
+  const { seconds: pollSec } = usePollingInterval();
+  const { stats, hourly, blocked, lastUpdate, paused, setPaused, dataSource } = useLiveDashboard(pollSec * 1000);
 
   const pieData = [
     { name: "Allowed", value: stats.allowedQueries, color: "hsl(150, 70%, 45%)" },

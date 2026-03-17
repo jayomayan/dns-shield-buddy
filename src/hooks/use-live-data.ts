@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { getPollingIntervalMs } from "@/hooks/use-polling-interval";
 import { queryStats as baseStats, hourlyData as baseHourly, topBlockedDomains, serverMetrics, type QueryLog } from "@/lib/mock-data";
 import {
   fetchUnboundStats,

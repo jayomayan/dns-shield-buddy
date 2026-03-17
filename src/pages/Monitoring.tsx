@@ -32,8 +32,9 @@ function GaugeRing({ value, label, color, icon: Icon }: { value: number; label: 
 }
 
 export default function Monitoring() {
-  const { metrics: serverMetrics, paused, setPaused, trafficHistory } = useLiveServerMetrics(2000);
-  const { results: pingResults, paused: pingPaused, setPaused: setPingPaused } = useLivePing(4000);
+  const { seconds: pollSec } = usePollingInterval();
+  const { metrics: serverMetrics, paused, setPaused, trafficHistory } = useLiveServerMetrics(pollSec * 1000);
+  const { results: pingResults, paused: pingPaused, setPaused: setPingPaused } = useLivePing(pollSec * 1000 + 1000);
   const [serviceStatus, setServiceStatus] = useState<"running" | "stopped" | "unknown">(serverMetrics.status);
   const [flushState, setFlushState] = useState<"idle" | "flushing" | "ok" | "fail">("idle");
 
