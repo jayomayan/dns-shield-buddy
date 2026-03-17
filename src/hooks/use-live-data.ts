@@ -107,7 +107,7 @@ export interface NetworkTrafficPoint {
 }
 
 export function useLiveServerMetrics(intervalMs = 3000) {
-  const [metrics, setMetrics] = useState({ ...serverMetrics });
+  const [metrics, setMetrics] = useState({ cpu: 0, memory: 0, disk: 0, networkIn: 0, networkOut: 0, status: "stopped" as const, hostname: "", version: "", os: "", resolver: "", ipAddress: "", publicIp: "", netmask: "", gateway: "", macAddress: "", dnsInterface: "" });
   const [paused, setPaused] = useState(false);
   const [dataSource, setDataSource] = useState<DataSource>("connecting");
   const [trafficHistory, setTrafficHistory] = useState<NetworkTrafficPoint[]>(() =>
