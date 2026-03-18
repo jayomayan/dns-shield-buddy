@@ -11,6 +11,7 @@ import { User } from "@supabase/supabase-js";
 import { toast } from "@/hooks/use-toast";
 import { useOktaContext } from "@/App";
 import { getOktaConfig } from "@/hooks/use-okta-session";
+import { getBranding, type BrandingConfig } from "@/lib/branding-store";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -24,10 +25,13 @@ const navItems = [
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [branding, setBranding] = useState<BrandingConfig>(getBranding);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null));
-    return () => subscription.unsubscribe();
+    const onBranding = () => setBranding(getBranding());
+    window.addEventListener("branding-changed", onBranding);
+    return () => { subscription.unsubscribe(); window.removeEventListener("branding-changed", onBranding); };
   }, []);
   const [collapsed, setCollapsed] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
@@ -65,7 +69,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       >
         {/* Logo */}
         <div className="flex items-center h-16 px-4 border-b border-border">
-          <Globe className="h-7 w-7 text-primary shrink-0" />
+          {branding.logoUrl ? (
+            <img src={branding.logoUrl} alt={branding.brandName} className="h-7 w-7 shrink-0 rounded object-contain" />
+          ) : (
+            <Globe className="h-7 w-7 text-primary shrink-0" />
+          )}
           <AnimatePresence>
             {!collapsed && (
               <motion.div
@@ -74,7 +82,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 exit={{ opacity: 0, width: 0 }}
                 className="ml-3 overflow-hidden whitespace-nowrap"
               >
-                <span className="text-lg font-bold text-gradient-primary">DNSGuard</span>
+                <span className="text-lg font-bold text-gradient-primary">{branding.brandName}</span>
                 <span className="block text-[10px] text-muted-foreground font-mono -mt-1">ENTERPRISE</span>
               </motion.div>
             )}

@@ -122,33 +122,49 @@ export default function QueryLogs() {
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, 50).map((log, i) => (
-                <tr
-                  key={log.id}
-                  className="border-b border-border/50 hover:bg-muted/20 transition-colors"
-                >
-                  <td className="py-2.5 px-4 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
-                    {new Date(log.timestamp).toLocaleTimeString()}
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-16 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <Radio className="h-8 w-8 text-muted-foreground/30" />
+                      <p className="text-sm font-medium text-muted-foreground">No data yet</p>
+                      <p className="text-xs text-muted-foreground/70">
+                        {dataSource === "connecting"
+                          ? "Waiting for bridge connection… Logs will appear here once data arrives."
+                          : "No logs match your current filters."}
+                      </p>
+                    </div>
                   </td>
-                  <td className="py-2.5 px-4 font-mono text-xs">{log.clientIp}</td>
-                  <td className="py-2.5 px-4 font-mono text-xs">{log.domain}</td>
-                  <td className="py-2.5 px-4">
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-muted text-muted-foreground">{log.type}</span>
-                  </td>
-                  <td className="py-2.5 px-4">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                        log.status === "allowed"
-                          ? "bg-success/10 text-success border border-success/20"
-                          : "bg-destructive/10 text-destructive border border-destructive/20"
-                      }`}
-                    >
-                      {log.status}
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-4 font-mono text-xs text-muted-foreground">{log.responseTime}ms</td>
                 </tr>
-              ))}
+              ) : (
+                filtered.slice(0, 50).map((log) => (
+                  <tr
+                    key={log.id}
+                    className="border-b border-border/50 hover:bg-muted/20 transition-colors"
+                  >
+                    <td className="py-2.5 px-4 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </td>
+                    <td className="py-2.5 px-4 font-mono text-xs">{log.clientIp}</td>
+                    <td className="py-2.5 px-4 font-mono text-xs">{log.domain}</td>
+                    <td className="py-2.5 px-4">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-muted text-muted-foreground">{log.type}</span>
+                    </td>
+                    <td className="py-2.5 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                          log.status === "allowed"
+                            ? "bg-success/10 text-success border border-success/20"
+                            : "bg-destructive/10 text-destructive border border-destructive/20"
+                        }`}
+                      >
+                        {log.status}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-4 font-mono text-xs text-muted-foreground">{log.responseTime}ms</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, LogIn, ExternalLink, RefreshCw, Timer } from "lucide-react";
+import { Save, Key, Shield, FileText, Bell, Plus, Trash2, Copy, Check, Eye, EyeOff, Server, CheckCircle2, XCircle, Loader2, AlertTriangle, Info, Lock, Download, Upload, Database, LogIn, ExternalLink, RefreshCw, Timer, Paintbrush, Image } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBridgeUrl, getBridgeHeaders } from "@/hooks/use-bridge-url";
@@ -9,6 +9,7 @@ import { saveOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
 import { Json } from "@/integrations/supabase/types";
 import { getConfig, saveConfig, reloadConfig, type AppConfig } from "@/lib/settings-store";
 import { usePollingInterval } from "@/hooks/use-polling-interval";
+import { getBranding, saveBranding, themePresets } from "@/lib/branding-store";
 
 interface EndpointResult {
   path: string;
@@ -125,6 +126,10 @@ export default function SettingsPage() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
+  // Branding state
+  const [brandName, setBrandName] = useState(() => getBranding().brandName);
+  const [logoUrl, setLogoUrl] = useState(() => getBranding().logoUrl);
+  const [activePreset, setActivePreset] = useState(() => getBranding().themePreset);
 
 
 
@@ -483,6 +488,107 @@ export default function SettingsPage() {
           <span>{loadError} Settings shown are defaults until the backend is reachable.</span>
         </div>
       )}
+
+      {/* Branding & Theme */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Paintbrush className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Branding & Theme</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-6">Customize the app name, logo, and color theme.</p>
+
+        <div className="space-y-5">
+          {/* Brand Name */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1.5">Brand Name</label>
+            <div className="flex items-center gap-2">
+              <input
+                value={brandName}
+                onChange={(e) => setBrandName(e.target.value)}
+                placeholder="DNSGuard"
+                className={inputClass + " flex-1"}
+              />
+              <button
+                onClick={() => {
+                  saveBranding({ brandName: brandName.trim() || "DNSGuard" });
+                  toast({ title: "Brand name updated" });
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
+              >
+                <Save className="h-3.5 w-3.5" /> Save
+              </button>
+            </div>
+          </div>
+
+          {/* Logo URL */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+              <span className="flex items-center gap-1.5"><Image className="h-3.5 w-3.5" /> Logo URL</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                value={logoUrl}
+                onChange={(e) => setLogoUrl(e.target.value)}
+                placeholder="https://example.com/logo.png (leave empty for default)"
+                className={inputClass + " flex-1"}
+              />
+              <button
+                onClick={() => {
+                  saveBranding({ logoUrl });
+                  toast({ title: "Logo updated" });
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
+              >
+                <Save className="h-3.5 w-3.5" /> Save
+              </button>
+            </div>
+            {logoUrl && (
+              <div className="mt-2 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg border border-border bg-muted flex items-center justify-center overflow-hidden">
+                  <img src={logoUrl} alt="Logo preview" className="w-full h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                </div>
+                <span className="text-[11px] text-muted-foreground">Preview</span>
+              </div>
+            )}
+          </div>
+
+          {/* Theme Color Presets */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-3">Theme Colors</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {themePresets.map((preset) => (
+                <button
+                  key={preset.id}
+                  onClick={() => {
+                    setActivePreset(preset.id);
+                    saveBranding({ themePreset: preset.id });
+                    toast({ title: `Theme: ${preset.name}` });
+                  }}
+                  className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
+                    activePreset === preset.id
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                      : "border-border hover:border-muted-foreground/30 hover:bg-muted/30"
+                  }`}
+                >
+                  {/* Color swatches */}
+                  <div className="flex gap-1 shrink-0">
+                    <div className="w-5 h-5 rounded-full border border-border" style={{ backgroundColor: preset.preview.primary }} />
+                    <div className="w-5 h-5 rounded-full border border-border" style={{ backgroundColor: preset.preview.accent }} />
+                    <div className="w-5 h-5 rounded-full border border-border" style={{ backgroundColor: preset.preview.bg }} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium truncate">{preset.name}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{preset.description}</div>
+                  </div>
+                  {activePreset === preset.id && (
+                    <Check className="h-4 w-4 text-primary shrink-0 ml-auto" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </motion.div>
 
       {/* Bridge Connection */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-lg p-6">
