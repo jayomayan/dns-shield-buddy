@@ -55,9 +55,13 @@ export default function OktaCallback() {
 
         {/* Logo */}
         <div className="flex items-center gap-3">
-          <Globe className="h-8 w-8 text-primary" />
+          {branding.logoUrl ? (
+            <img src={branding.logoUrl} alt={branding.brandName} className="h-8 w-8 shrink-0 rounded object-contain" />
+          ) : (
+            <Globe className="h-8 w-8 text-primary" />
+          )}
           <div className="text-left">
-            <span className="text-lg font-bold text-gradient-primary">DNSGuard</span>
+            <span className="text-lg font-bold text-gradient-primary">{branding.brandName}</span>
             <span className="block text-[10px] text-muted-foreground font-mono -mt-1">ENTERPRISE</span>
           </div>
         </div>

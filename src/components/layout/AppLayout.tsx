@@ -152,7 +152,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <header className="h-16 border-b border-border flex items-center justify-between px-6 bg-card/50 backdrop-blur-sm sticky top-0 z-10">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold">
-              {navItems.find((n) => n.path === location.pathname)?.label || "DNSGuard"}
+              {navItems.find((n) => n.path === location.pathname)?.label || branding.brandName}
             </h1>
           </div>
           <div className="flex items-center gap-3">
