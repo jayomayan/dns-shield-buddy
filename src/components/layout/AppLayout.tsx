@@ -25,10 +25,13 @@ const navItems = [
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [branding, setBranding] = useState<BrandingConfig>(getBranding);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null));
-    return () => subscription.unsubscribe();
+    const onBranding = () => setBranding(getBranding());
+    window.addEventListener("branding-changed", onBranding);
+    return () => { subscription.unsubscribe(); window.removeEventListener("branding-changed", onBranding); };
   }, []);
   const [collapsed, setCollapsed] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
