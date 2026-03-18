@@ -4,6 +4,7 @@ import { Globe, Shield, Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { getOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
 import { loadConfig, isLoaded } from "@/lib/settings-store";
+import { getBranding, type BrandingConfig } from "@/lib/branding-store";
 
 export default function AuthPage() {
   const [email, setEmail] = useState("");
