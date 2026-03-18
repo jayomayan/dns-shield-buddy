@@ -8,6 +8,7 @@ import { getBranding, type BrandingConfig } from "@/lib/branding-store";
 export default function OktaCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+  const [branding] = useState<BrandingConfig>(getBranding);
 
   useEffect(() => {
     const run = async () => {
