@@ -126,6 +126,10 @@ export default function SettingsPage() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
+  // Branding state
+  const [brandName, setBrandName] = useState(() => getBranding().brandName);
+  const [logoUrl, setLogoUrl] = useState(() => getBranding().logoUrl);
+  const [activePreset, setActivePreset] = useState(() => getBranding().themePreset);
 
 
 
