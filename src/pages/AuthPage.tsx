@@ -13,11 +13,15 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [oktaLoading, setOktaLoading] = useState(false);
   const [configLoading, setConfigLoading] = useState(!isLoaded());
+  const [branding, setBranding] = useState<BrandingConfig>(getBranding);
 
   useEffect(() => {
     if (!isLoaded()) {
       loadConfig().finally(() => setConfigLoading(false));
     }
+    const onBranding = () => setBranding(getBranding());
+    window.addEventListener("branding-changed", onBranding);
+    return () => window.removeEventListener("branding-changed", onBranding);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
