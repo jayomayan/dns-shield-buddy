@@ -69,7 +69,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       >
         {/* Logo */}
         <div className="flex items-center h-16 px-4 border-b border-border">
-          <Globe className="h-7 w-7 text-primary shrink-0" />
+          {branding.logoUrl ? (
+            <img src={branding.logoUrl} alt={branding.brandName} className="h-7 w-7 shrink-0 rounded object-contain" />
+          ) : (
+            <Globe className="h-7 w-7 text-primary shrink-0" />
+          )}
           <AnimatePresence>
             {!collapsed && (
               <motion.div
@@ -78,7 +82,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 exit={{ opacity: 0, width: 0 }}
                 className="ml-3 overflow-hidden whitespace-nowrap"
               >
-                <span className="text-lg font-bold text-gradient-primary">DNSGuard</span>
+                <span className="text-lg font-bold text-gradient-primary">{branding.brandName}</span>
                 <span className="block text-[10px] text-muted-foreground font-mono -mt-1">ENTERPRISE</span>
               </motion.div>
             )}
