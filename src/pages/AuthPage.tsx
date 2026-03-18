@@ -4,6 +4,7 @@ import { Globe, Shield, Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { getOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
 import { loadConfig, isLoaded } from "@/lib/settings-store";
+import { getBranding, type BrandingConfig } from "@/lib/branding-store";
 
 export default function AuthPage() {
   const [email, setEmail] = useState("");
@@ -12,11 +13,15 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [oktaLoading, setOktaLoading] = useState(false);
   const [configLoading, setConfigLoading] = useState(!isLoaded());
+  const [branding, setBranding] = useState<BrandingConfig>(getBranding);
 
   useEffect(() => {
     if (!isLoaded()) {
       loadConfig().finally(() => setConfigLoading(false));
     }
+    const onBranding = () => setBranding(getBranding());
+    window.addEventListener("branding-changed", onBranding);
+    return () => window.removeEventListener("branding-changed", onBranding);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,9 +52,13 @@ export default function AuthPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex items-center gap-3 mb-8 justify-center">
-          <Globe className="h-8 w-8 text-primary" />
+          {branding.logoUrl ? (
+            <img src={branding.logoUrl} alt={branding.brandName} className="h-8 w-8 shrink-0 rounded object-contain" />
+          ) : (
+            <Globe className="h-8 w-8 text-primary" />
+          )}
           <div>
-            <span className="text-xl font-bold text-gradient-primary">DNSGuard</span>
+            <span className="text-xl font-bold text-gradient-primary">{branding.brandName}</span>
             <span className="block text-[10px] text-muted-foreground font-mono -mt-1">ENTERPRISE</span>
           </div>
         </div>
