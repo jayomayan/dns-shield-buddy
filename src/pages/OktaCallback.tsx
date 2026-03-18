@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Globe, Loader2, XCircle, AlertCircle } from "lucide-react";
 import { getOktaConfig, handleOktaCallback } from "@/hooks/use-okta-session";
 import { loadConfig, isLoaded } from "@/lib/settings-store";
+import { getBranding, type BrandingConfig } from "@/lib/branding-store";
 
 export default function OktaCallback() {
   const navigate = useNavigate();
