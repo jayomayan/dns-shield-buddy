@@ -11,6 +11,7 @@ import { User } from "@supabase/supabase-js";
 import { toast } from "@/hooks/use-toast";
 import { useOktaContext } from "@/App";
 import { getOktaConfig } from "@/hooks/use-okta-session";
+import { getBranding, type BrandingConfig } from "@/lib/branding-store";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
