@@ -17,6 +17,7 @@ export type Database = {
       user_settings: {
         Row: {
           api_tokens: Json | null
+          brand_name: string
           bridge_api_key: string | null
           bridge_url: string | null
           created_at: string
@@ -24,17 +25,20 @@ export type Database = {
           log_max_size: string
           log_retention: string
           log_rotation: string
+          logo_url: string
           notify_blocked: boolean
           notify_service: boolean
           okta_client_id: string | null
           okta_client_secret: string | null
           okta_domain: string | null
           okta_enabled: boolean
+          theme_preset: string
           updated_at: string
           user_id: string
         }
         Insert: {
           api_tokens?: Json | null
+          brand_name?: string
           bridge_api_key?: string | null
           bridge_url?: string | null
           created_at?: string
@@ -42,17 +46,20 @@ export type Database = {
           log_max_size?: string
           log_retention?: string
           log_rotation?: string
+          logo_url?: string
           notify_blocked?: boolean
           notify_service?: boolean
           okta_client_id?: string | null
           okta_client_secret?: string | null
           okta_domain?: string | null
           okta_enabled?: boolean
+          theme_preset?: string
           updated_at?: string
           user_id: string
         }
         Update: {
           api_tokens?: Json | null
+          brand_name?: string
           bridge_api_key?: string | null
           bridge_url?: string | null
           created_at?: string
@@ -60,12 +67,14 @@ export type Database = {
           log_max_size?: string
           log_retention?: string
           log_rotation?: string
+          logo_url?: string
           notify_blocked?: boolean
           notify_service?: boolean
           okta_client_id?: string | null
           okta_client_secret?: string | null
           okta_domain?: string | null
           okta_enabled?: boolean
+          theme_preset?: string
           updated_at?: string
           user_id?: string
         }
