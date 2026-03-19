@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { getBranding, applyThemePreset } from "@/lib/branding-store";
+import { getBranding, applyThemePreset, loadBrandingFromDB } from "@/lib/branding-store";
 
 type Theme = "dark" | "light" | "system";
 
@@ -13,6 +13,13 @@ const ThemeContext = createContext<ThemeContextType>({ theme: "system", setTheme
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem("dnsguard-theme") as Theme) || "system");
 
+  // Load branding from DB on mount
+  useEffect(() => {
+    loadBrandingFromDB().then((b) => {
+      document.title = b.brandName || "DNSGuard";
+    });
+  }, []);
+
   useEffect(() => {
     const root = document.documentElement;
     const resolve = (t: Theme) =>
@@ -22,15 +29,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       const resolved = resolve(theme);
       root.classList.remove("light", "dark");
       root.classList.add(resolved);
-      // Apply theme preset CSS vars
       const branding = getBranding();
       applyThemePreset(branding.themePreset, resolved === "dark");
+      // Keep document title in sync
+      document.title = branding.brandName || "DNSGuard";
     };
 
     applyAll();
     localStorage.setItem("dnsguard-theme", theme);
 
-    // Listen for branding changes (theme preset switch)
     const onBrandingChanged = () => applyAll();
     window.addEventListener("branding-changed", onBrandingChanged);
 
