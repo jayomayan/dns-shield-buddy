@@ -1,4 +1,5 @@
-import { Globe, ShieldCheck, ShieldX, Zap, ArrowUpRight, Pause, Play, Radio } from "lucide-react";
+import { useState } from "react";
+import { Globe, ShieldCheck, ShieldX, Zap, ArrowUpRight, Pause, Play, Radio, ChevronDown, ChevronUp } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import StatCard from "@/components/dashboard/StatCard";
 import { useLiveDashboard } from "@/hooks/use-live-data";
@@ -7,13 +8,24 @@ import { motion, AnimatePresence } from "framer-motion";
 
 export default function Dashboard() {
   const { seconds: pollSec } = usePollingInterval();
-  const { stats, hourly, blocked, lastUpdate, paused, setPaused, dataSource } = useLiveDashboard(pollSec * 1000);
+  const { stats, hourly, blocked, lastUpdate, paused, setPaused, dataSource, firstLogTime } = useLiveDashboard(pollSec * 1000);
+  const [showAllBlocked, setShowAllBlocked] = useState(false);
 
   const pieData = [
     { name: "Allowed", value: stats.allowedQueries, color: "hsl(150, 70%, 45%)" },
     { name: "Blocked", value: stats.blockedQueries, color: "hsl(0, 72%, 55%)" },
     { name: "Cached", value: stats.cachedQueries, color: "hsl(38, 92%, 55%)" },
   ];
+
+  // Format first log time for subtitle
+  const timeSubtitle = firstLogTime
+    ? `Since ${new Date(firstLogTime).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
+    : "Last 24 hours";
+
+  // Chart title with time range
+  const chartTitle = firstLogTime
+    ? `Query Volume (since ${new Date(firstLogTime).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })})`
+    : "Query Volume (24h)";
 
   return (
     <div className="space-y-6">
@@ -53,9 +65,9 @@ export default function Dashboard() {
 
       {/* Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Queries" value={stats.totalQueries} subtitle="Last 24 hours" icon={Globe} variant="primary" delay={0} />
-        <StatCard title="Allowed" value={stats.allowedQueries} subtitle={`${((stats.allowedQueries / stats.totalQueries) * 100).toFixed(1)}% of total`} icon={ShieldCheck} variant="success" delay={0.05} />
-        <StatCard title="Blocked" value={stats.blockedQueries} subtitle={`${((stats.blockedQueries / stats.totalQueries) * 100).toFixed(1)}% of total`} icon={ShieldX} variant="destructive" delay={0.1} />
+        <StatCard title="Total Queries" value={stats.totalQueries} subtitle={timeSubtitle} icon={Globe} variant="primary" delay={0} />
+        <StatCard title="Allowed" value={stats.allowedQueries} subtitle={`${stats.totalQueries > 0 ? ((stats.allowedQueries / stats.totalQueries) * 100).toFixed(1) : "0.0"}% of total`} icon={ShieldCheck} variant="success" delay={0.05} />
+        <StatCard title="Blocked" value={stats.blockedQueries} subtitle={`${stats.totalQueries > 0 ? ((stats.blockedQueries / stats.totalQueries) * 100).toFixed(1) : "0.0"}% of total`} icon={ShieldX} variant="destructive" delay={0.1} />
         <StatCard title="Avg Response" value={`${stats.avgResponseTime}ms`} subtitle={`Uptime: ${stats.uptime}%`} icon={Zap} variant="warning" delay={0.15} />
       </div>
 
@@ -67,7 +79,7 @@ export default function Dashboard() {
           transition={{ delay: 0.2 }}
           className="lg:col-span-2 bg-card border border-border rounded-lg p-5"
         >
-          <h3 className="text-sm font-semibold mb-4">Query Volume (24h)</h3>
+          <h3 className="text-sm font-semibold mb-4">{chartTitle}</h3>
           <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={hourly}>
               <defs>
@@ -132,8 +144,15 @@ export default function Dashboard() {
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold">Top Blocked Domains</h3>
-          <button className="text-xs text-primary flex items-center gap-1 hover:underline">
-            View All <ArrowUpRight className="h-3 w-3" />
+          <button
+            onClick={() => setShowAllBlocked((v) => !v)}
+            className="text-xs text-primary flex items-center gap-1 hover:underline"
+          >
+            {showAllBlocked ? (
+              <>Collapse <ChevronUp className="h-3 w-3" /></>
+            ) : (
+              <>View All <ChevronDown className="h-3 w-3" /></>
+            )}
           </button>
         </div>
         <div className="overflow-x-auto">
@@ -146,20 +165,31 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {blocked.slice(0, 6).map((item) => (
-                <tr key={item.domain} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                  <td className="py-2.5 font-mono text-xs">{item.domain}</td>
-                  <td className="py-2.5">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-destructive/10 text-destructive border border-destructive/20">
-                      {item.category}
-                    </span>
-                  </td>
-                  <td className="py-2.5 text-right font-mono text-xs">{item.count.toLocaleString()}</td>
-                </tr>
-              ))}
+              <AnimatePresence>
+                {(showAllBlocked ? blocked : blocked.slice(0, 6)).map((item) => (
+                  <motion.tr
+                    key={item.domain}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                  >
+                    <td className="py-2.5 font-mono text-xs">{item.domain}</td>
+                    <td className="py-2.5">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-destructive/10 text-destructive border border-destructive/20">
+                        {item.category}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-right font-mono text-xs">{item.count.toLocaleString()}</td>
+                  </motion.tr>
+                ))}
+              </AnimatePresence>
             </tbody>
           </table>
         </div>
+        {blocked.length === 0 && (
+          <p className="text-center py-8 text-xs text-muted-foreground">No blocked domains yet.</p>
+        )}
       </motion.div>
     </div>
   );

@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Search, Download, Pause, Play, Radio } from "lucide-react";
 import { useLiveQueryLogs } from "@/hooks/use-live-data";
 import { usePollingInterval } from "@/hooks/use-polling-interval";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function QueryLogs() {
   const { seconds: pollSec } = usePollingInterval();
@@ -9,6 +10,9 @@ export default function QueryLogs() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "allowed" | "blocked">("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  // Track log IDs we've already rendered to detect new ones
+  const renderedIdsRef = useRef<Set<string>>(new Set());
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
     return logs.filter((log) => {
@@ -18,6 +22,24 @@ export default function QueryLogs() {
       return matchSearch && matchStatus && matchType;
     });
   }, [logs, search, statusFilter, typeFilter]);
+
+  // Detect newly added log entries for fade-in
+  useEffect(() => {
+    const fresh = new Set<string>();
+    for (const log of filtered.slice(0, 50)) {
+      if (!renderedIdsRef.current.has(log.id)) {
+        fresh.add(log.id);
+      }
+    }
+    if (fresh.size > 0) {
+      setNewIds(fresh);
+      const timer = setTimeout(() => {
+        fresh.forEach((id) => renderedIdsRef.current.add(id));
+        setNewIds(new Set());
+      }, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [filtered]);
 
   const exportCSV = () => {
     const header = "Timestamp,Client IP,Domain,Type,Status,Response Time\n";
@@ -118,7 +140,6 @@ export default function QueryLogs() {
                 <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium">Type</th>
                 <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium">Status</th>
                 <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium">Response</th>
-                
               </tr>
             </thead>
             <tbody>
@@ -138,8 +159,11 @@ export default function QueryLogs() {
                 </tr>
               ) : (
                 filtered.slice(0, 50).map((log) => (
-                  <tr
+                  <motion.tr
                     key={log.id}
+                    initial={newIds.has(log.id) ? { opacity: 0, backgroundColor: "hsl(var(--primary) / 0.08)" } : false}
+                    animate={{ opacity: 1, backgroundColor: "transparent" }}
+                    transition={{ duration: 0.5, ease: "easeOut" }}
                     className="border-b border-border/50 hover:bg-muted/20 transition-colors"
                   >
                     <td className="py-2.5 px-4 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
@@ -162,7 +186,7 @@ export default function QueryLogs() {
                       </span>
                     </td>
                     <td className="py-2.5 px-4 font-mono text-xs text-muted-foreground">{log.responseTime}ms</td>
-                  </tr>
+                  </motion.tr>
                 ))
               )}
             </tbody>

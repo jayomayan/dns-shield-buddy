@@ -21,6 +21,7 @@ export function useLiveDashboard(intervalMs = 3000) {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [paused, setPaused] = useState(false);
   const [dataSource, setDataSource] = useState<DataSource>("connecting");
+  const [firstLogTime, setFirstLogTime] = useState<string | null>(null);
   const prevStatsRef = useRef<UnboundLiveStats | null>(null);
 
   useEffect(() => {
@@ -54,6 +55,10 @@ export function useLiveDashboard(intervalMs = 3000) {
         // Use real hourly data from logs summary if available
         if (summary && summary.hourly.length > 0) {
           setHourly(summary.hourly);
+          // Derive first log time from the earliest hourly bucket
+          if (!firstLogTime) {
+            setFirstLogTime(summary.hourly[0].hour);
+          }
         } else if (prevStatsRef.current) {
           const prev = prevStatsRef.current;
           const deltaAllowed = Math.max(0, allowedQueries - prev.allowedQueries);
@@ -95,7 +100,7 @@ export function useLiveDashboard(intervalMs = 3000) {
     return () => { active = false; clearInterval(timer); };
   }, [intervalMs, paused]);
 
-  return { stats, hourly, blocked, lastUpdate, paused, setPaused, dataSource };
+  return { stats, hourly, blocked, lastUpdate, paused, setPaused, dataSource, firstLogTime };
 }
 
 // ─── Server metrics ───────────────────────────────────────────────────────────
