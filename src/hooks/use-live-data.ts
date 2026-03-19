@@ -21,6 +21,7 @@ export function useLiveDashboard(intervalMs = 3000) {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [paused, setPaused] = useState(false);
   const [dataSource, setDataSource] = useState<DataSource>("connecting");
+  const [firstLogTime, setFirstLogTime] = useState<string | null>(null);
   const prevStatsRef = useRef<UnboundLiveStats | null>(null);
 
   useEffect(() => {
