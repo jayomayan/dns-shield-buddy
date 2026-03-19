@@ -100,7 +100,7 @@ export function useLiveDashboard(intervalMs = 3000) {
     return () => { active = false; clearInterval(timer); };
   }, [intervalMs, paused]);
 
-  return { stats, hourly, blocked, lastUpdate, paused, setPaused, dataSource };
+  return { stats, hourly, blocked, lastUpdate, paused, setPaused, dataSource, firstLogTime };
 }
 
 // ─── Server metrics ───────────────────────────────────────────────────────────
