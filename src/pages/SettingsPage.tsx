@@ -1102,7 +1102,7 @@ export default function SettingsPage() {
           <h3 className="text-sm font-semibold">Database Migrations</h3>
         </div>
         <p className="text-xs text-muted-foreground mb-5">
-          Run additional migrations on your self-hosted database to enable new features.
+          Check and apply additional migrations on your self-hosted database to enable new features.
         </p>
 
         <div className="space-y-3">
@@ -1120,7 +1120,6 @@ export default function SettingsPage() {
                   setMigrationRunning(true);
                   setMigrationResult(null);
                   try {
-                    // First check if columns already exist
                     const { error: testErr } = await selfHostedSupabase
                       .from("user_settings")
                       .select("brand_name, logo_url, theme_preset")
@@ -1128,23 +1127,9 @@ export default function SettingsPage() {
                     if (!testErr) {
                       setMigrationRan(true);
                       localStorage.setItem("dnsguard-migration-002-ran", "true");
-                      setMigrationResult({ ok: true, message: "Columns already exist — migration not needed." });
-                      setMigrationRunning(false);
-                      return;
-                    }
-
-                    // Call the edge function to run migration
-                    const { data, error } = await selfHostedSupabase.functions.invoke("run-migration", {
-                      body: { migration_id: "002_add_branding_columns" },
-                    });
-                    if (error) {
-                      setMigrationResult({ ok: false, message: `Migration failed: ${error.message}` });
-                    } else if (data?.error) {
-                      setMigrationResult({ ok: false, message: `Migration failed: ${data.error}` });
+                      setMigrationResult({ ok: true, message: "✅ Columns already exist — migration already applied." });
                     } else {
-                      setMigrationRan(true);
-                      localStorage.setItem("dnsguard-migration-002-ran", "true");
-                      setMigrationResult({ ok: true, message: data?.message || "Migration applied successfully!" });
+                      setMigrationResult({ ok: false, message: "Columns not found. Please run the SQL below on your self-hosted database, then click Check again." });
                     }
                   } catch (e) {
                     setMigrationResult({ ok: false, message: `Unexpected error: ${e instanceof Error ? e.message : "Unknown"}` });
@@ -1158,22 +1143,51 @@ export default function SettingsPage() {
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {migrationRunning ? (
-                  <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Running…</>
+                  <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking…</>
                 ) : migrationRan ? (
                   <><CheckCircle2 className="h-3.5 w-3.5" /> Applied</>
                 ) : (
-                  <><Play className="h-3.5 w-3.5" /> Run Migration</>
+                  <><Play className="h-3.5 w-3.5" /> Check &amp; Apply</>
                 )}
               </button>
             </div>
             {migrationResult && (
-              <div className={`flex items-center gap-2 mt-3 p-3 rounded-lg text-xs border ${
+              <div className={`flex flex-col gap-2 mt-3 p-3 rounded-lg text-xs border ${
                 migrationResult.ok
                   ? "bg-primary/5 border-primary/20 text-primary"
-                  : "bg-destructive/5 border-destructive/20 text-destructive"
+                  : "bg-accent/5 border-accent/20 text-foreground"
               }`}>
-                {migrationResult.ok ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
-                {migrationResult.message}
+                <div className="flex items-center gap-2">
+                  {migrationResult.ok ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />}
+                  {migrationResult.message}
+                </div>
+                {!migrationResult.ok && (
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-medium text-muted-foreground">Migration SQL:</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(
+                            `ALTER TABLE public.user_settings\n  ADD COLUMN IF NOT EXISTS brand_name  text NOT NULL DEFAULT 'DNSGuard',\n  ADD COLUMN IF NOT EXISTS logo_url    text NOT NULL DEFAULT '',\n  ADD COLUMN IF NOT EXISTS theme_preset text NOT NULL DEFAULT 'cyan-shield';`
+                          );
+                          toast({ title: "SQL copied to clipboard" });
+                        }}
+                        className="flex items-center gap-1 px-2 py-1 text-[10px] rounded bg-muted hover:bg-muted/80 text-muted-foreground transition-colors"
+                      >
+                        <Copy className="h-3 w-3" /> Copy SQL
+                      </button>
+                    </div>
+                    <pre className="bg-muted/50 border border-border rounded p-3 text-[11px] font-mono whitespace-pre-wrap text-muted-foreground overflow-x-auto">
+{`ALTER TABLE public.user_settings
+  ADD COLUMN IF NOT EXISTS brand_name  text NOT NULL DEFAULT 'DNSGuard',
+  ADD COLUMN IF NOT EXISTS logo_url    text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS theme_preset text NOT NULL DEFAULT 'cyan-shield';`}
+                    </pre>
+                    <p className="text-[11px] text-muted-foreground mt-2">
+                      Run this in your self-hosted Supabase SQL editor or <code className="bg-muted px-1 rounded">psql</code>, then click <strong>Check &amp; Apply</strong> again.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
