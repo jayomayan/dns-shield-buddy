@@ -9,7 +9,7 @@ import { saveOktaConfig, startOktaLogin } from "@/hooks/use-okta-session";
 import { Json } from "@/integrations/supabase/types";
 import { getConfig, saveConfig, reloadConfig, type AppConfig } from "@/lib/settings-store";
 import { usePollingInterval } from "@/hooks/use-polling-interval";
-import { getBranding, saveBranding, themePresets } from "@/lib/branding-store";
+import { getBranding, saveBranding, loadBrandingFromDB, themePresets } from "@/lib/branding-store";
 
 interface EndpointResult {
   path: string;
