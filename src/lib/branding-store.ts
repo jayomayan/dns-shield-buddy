@@ -62,20 +62,17 @@ export async function saveBranding(patch: Partial<BrandingConfig>): Promise<Bran
   // Update document title
   document.title = updated.brandName || defaults.brandName;
 
-  // Persist to DB
-  const dbPatch: Record<string, string> = {};
-  if (patch.brandName !== undefined) dbPatch.brand_name = patch.brandName;
-  if (patch.logoUrl !== undefined) dbPatch.logo_url = patch.logoUrl;
-  if (patch.themePreset !== undefined) dbPatch.theme_preset = patch.themePreset;
+  // Persist to DB via upsert to handle missing rows
+  const dbRow: Record<string, string> = { user_id: SYSTEM_USER_ID };
+  if (patch.brandName !== undefined) dbRow.brand_name = patch.brandName;
+  if (patch.logoUrl !== undefined) dbRow.logo_url = patch.logoUrl;
+  if (patch.themePreset !== undefined) dbRow.theme_preset = patch.themePreset;
 
-  if (Object.keys(dbPatch).length > 0) {
-    await supabase
+  if (Object.keys(dbRow).length > 1) {
+    const { error } = await supabase
       .from("user_settings")
-      .update(dbPatch)
-      .eq("user_id", SYSTEM_USER_ID)
-      .then(({ error }) => {
-        if (error) console.error("Branding save error:", error);
-      });
+      .upsert(dbRow, { onConflict: "user_id" });
+    if (error) console.error("Branding save error:", error);
   }
 
   return updated;
