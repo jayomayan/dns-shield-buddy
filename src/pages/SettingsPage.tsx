@@ -10,6 +10,7 @@ import { Json } from "@/integrations/supabase/types";
 import { getConfig, saveConfig, reloadConfig, type AppConfig } from "@/lib/settings-store";
 import { usePollingInterval } from "@/hooks/use-polling-interval";
 import { getBranding, saveBranding, loadBrandingFromDB, themePresets } from "@/lib/branding-store";
+import { supabase as selfHostedSupabase } from "@/lib/supabase-client";
 
 interface EndpointResult {
   path: string;
