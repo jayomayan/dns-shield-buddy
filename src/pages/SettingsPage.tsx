@@ -1120,32 +1120,31 @@ export default function SettingsPage() {
                   setMigrationRunning(true);
                   setMigrationResult(null);
                   try {
-                    // Execute migration SQL via rpc or raw — try altering each column
-                    const sql = `
-                      ALTER TABLE public.user_settings
-                        ADD COLUMN IF NOT EXISTS brand_name  text NOT NULL DEFAULT 'DNSGuard',
-                        ADD COLUMN IF NOT EXISTS logo_url    text NOT NULL DEFAULT '',
-                        ADD COLUMN IF NOT EXISTS theme_preset text NOT NULL DEFAULT 'cyan-shield';
-                    `;
-                    const { error } = await selfHostedSupabase.rpc("exec_sql", { query: sql });
+                    // First check if columns already exist
+                    const { error: testErr } = await selfHostedSupabase
+                      .from("user_settings")
+                      .select("brand_name, logo_url, theme_preset")
+                      .limit(1);
+                    if (!testErr) {
+                      setMigrationRan(true);
+                      localStorage.setItem("dnsguard-migration-002-ran", "true");
+                      setMigrationResult({ ok: true, message: "Columns already exist — migration not needed." });
+                      setMigrationRunning(false);
+                      return;
+                    }
+
+                    // Call the edge function to run migration
+                    const { data, error } = await selfHostedSupabase.functions.invoke("run-migration", {
+                      body: { migration_id: "002_add_branding_columns" },
+                    });
                     if (error) {
-                      // Fallback: try a simple upsert to test if columns already exist
-                      const { error: testErr } = await selfHostedSupabase
-                        .from("user_settings")
-                        .select("brand_name, logo_url, theme_preset")
-                        .limit(1);
-                      if (!testErr) {
-                        // Columns already exist — migration already applied
-                        setMigrationRan(true);
-                        localStorage.setItem("dnsguard-migration-002-ran", "true");
-                        setMigrationResult({ ok: true, message: "Columns already exist — migration not needed." });
-                      } else {
-                        setMigrationResult({ ok: false, message: `Migration failed: ${error.message}. Run the SQL manually on your database.` });
-                      }
+                      setMigrationResult({ ok: false, message: `Migration failed: ${error.message}` });
+                    } else if (data?.error) {
+                      setMigrationResult({ ok: false, message: `Migration failed: ${data.error}` });
                     } else {
                       setMigrationRan(true);
                       localStorage.setItem("dnsguard-migration-002-ran", "true");
-                      setMigrationResult({ ok: true, message: "Migration applied successfully!" });
+                      setMigrationResult({ ok: true, message: data?.message || "Migration applied successfully!" });
                     }
                   } catch (e) {
                     setMigrationResult({ ok: false, message: `Unexpected error: ${e instanceof Error ? e.message : "Unknown"}` });
