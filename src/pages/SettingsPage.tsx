@@ -1095,6 +1095,92 @@ export default function SettingsPage() {
         </div>
       </motion.div>
 
+      {/* Database Migrations */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }} className="bg-card border border-border rounded-lg p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Database className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Database Migrations</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-5">
+          Run additional migrations on your self-hosted database to enable new features.
+        </p>
+
+        <div className="space-y-3">
+          <div className="border border-border rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">002 — Add Branding Columns</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Adds <code className="text-[11px] bg-muted px-1 py-0.5 rounded">brand_name</code>, <code className="text-[11px] bg-muted px-1 py-0.5 rounded">logo_url</code>, and <code className="text-[11px] bg-muted px-1 py-0.5 rounded">theme_preset</code> columns to user_settings.
+                </p>
+              </div>
+              <button
+                disabled={migrationRan || migrationRunning}
+                onClick={async () => {
+                  setMigrationRunning(true);
+                  setMigrationResult(null);
+                  try {
+                    // Execute migration SQL via rpc or raw — try altering each column
+                    const sql = `
+                      ALTER TABLE public.user_settings
+                        ADD COLUMN IF NOT EXISTS brand_name  text NOT NULL DEFAULT 'DNSGuard',
+                        ADD COLUMN IF NOT EXISTS logo_url    text NOT NULL DEFAULT '',
+                        ADD COLUMN IF NOT EXISTS theme_preset text NOT NULL DEFAULT 'cyan-shield';
+                    `;
+                    const { error } = await selfHostedSupabase.rpc("exec_sql", { query: sql });
+                    if (error) {
+                      // Fallback: try a simple upsert to test if columns already exist
+                      const { error: testErr } = await selfHostedSupabase
+                        .from("user_settings")
+                        .select("brand_name, logo_url, theme_preset")
+                        .limit(1);
+                      if (!testErr) {
+                        // Columns already exist — migration already applied
+                        setMigrationRan(true);
+                        localStorage.setItem("dnsguard-migration-002-ran", "true");
+                        setMigrationResult({ ok: true, message: "Columns already exist — migration not needed." });
+                      } else {
+                        setMigrationResult({ ok: false, message: `Migration failed: ${error.message}. Run the SQL manually on your database.` });
+                      }
+                    } else {
+                      setMigrationRan(true);
+                      localStorage.setItem("dnsguard-migration-002-ran", "true");
+                      setMigrationResult({ ok: true, message: "Migration applied successfully!" });
+                    }
+                  } catch (e) {
+                    setMigrationResult({ ok: false, message: `Unexpected error: ${e instanceof Error ? e.message : "Unknown"}` });
+                  }
+                  setMigrationRunning(false);
+                }}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
+                  migrationRan
+                    ? "bg-muted text-muted-foreground cursor-not-allowed"
+                    : "bg-primary text-primary-foreground hover:bg-primary/90"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {migrationRunning ? (
+                  <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Running…</>
+                ) : migrationRan ? (
+                  <><CheckCircle2 className="h-3.5 w-3.5" /> Applied</>
+                ) : (
+                  <><Play className="h-3.5 w-3.5" /> Run Migration</>
+                )}
+              </button>
+            </div>
+            {migrationResult && (
+              <div className={`flex items-center gap-2 mt-3 p-3 rounded-lg text-xs border ${
+                migrationResult.ok
+                  ? "bg-primary/5 border-primary/20 text-primary"
+                  : "bg-destructive/5 border-destructive/20 text-destructive"
+              }`}>
+                {migrationResult.ok ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
+                {migrationResult.message}
+              </div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+
       {/* Import / Export Config */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-card border border-border rounded-lg p-6">
         <div className="flex items-center gap-2 mb-1">
