@@ -126,12 +126,19 @@ export default function SettingsPage() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
-  // Branding state
+  // Branding state — initialise from localStorage, then override from DB
   const [brandName, setBrandName] = useState(() => getBranding().brandName);
   const [logoUrl, setLogoUrl] = useState(() => getBranding().logoUrl);
   const [activePreset, setActivePreset] = useState(() => getBranding().themePreset);
 
-
+  // Load branding from DB on mount to ensure DB is source of truth
+  useEffect(() => {
+    loadBrandingFromDB().then((b) => {
+      setBrandName(b.brandName);
+      setLogoUrl(b.logoUrl);
+      setActivePreset(b.themePreset);
+    });
+  }, []);
 
   // Okta state
   const [oktaDomain, setOktaDomain] = useState("");
