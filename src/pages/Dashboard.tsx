@@ -18,13 +18,15 @@ export default function Dashboard() {
   ];
 
   // Format first log time for subtitle
-  const timeSubtitle = firstLogTime
-    ? `Since ${new Date(firstLogTime).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
+  const firstLogDate = firstLogTime ? new Date(firstLogTime) : null;
+  const isValidDate = firstLogDate && !isNaN(firstLogDate.getTime());
+  const timeSubtitle = isValidDate
+    ? `Since ${firstLogDate.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
     : "Last 24 hours";
 
   // Chart title with time range
-  const chartTitle = firstLogTime
-    ? `Query Volume (since ${new Date(firstLogTime).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })})`
+  const chartTitle = isValidDate
+    ? `Query Volume (since ${firstLogDate.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })})`
     : "Query Volume (24h)";
 
   return (
