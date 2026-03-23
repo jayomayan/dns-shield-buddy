@@ -28,21 +28,25 @@ export function getBranding(): BrandingConfig {
   }
 }
 
-/** Load branding from DB and update localStorage cache */
+/** Load branding from DB and update localStorage cache.
+ *  Uses select("*") to avoid 400 errors if branding columns haven't been
+ *  added to the self-hosted schema yet (migration 002). */
 export async function loadBrandingFromDB(): Promise<BrandingConfig> {
   try {
     const { data, error } = await supabase
       .from("user_settings")
-      .select("brand_name, logo_url, theme_preset")
+      .select("*")
       .eq("user_id", SYSTEM_USER_ID)
       .maybeSingle();
 
     if (error || !data) return getBranding();
 
+    // Safely read branding columns — they may not exist on older self-hosted schemas
+    const row = data as Record<string, unknown>;
     const config: BrandingConfig = {
-      brandName: data.brand_name || defaults.brandName,
-      logoUrl: data.logo_url || defaults.logoUrl,
-      themePreset: data.theme_preset || defaults.themePreset,
+      brandName: (typeof row.brand_name === "string" && row.brand_name) || defaults.brandName,
+      logoUrl: (typeof row.logo_url === "string" ? row.logo_url : defaults.logoUrl),
+      themePreset: (typeof row.theme_preset === "string" && row.theme_preset) || defaults.themePreset,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
     window.dispatchEvent(new CustomEvent("branding-changed", { detail: config }));
