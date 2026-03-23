@@ -85,7 +85,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      exec_migration_sql: { Args: { sql_text: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
