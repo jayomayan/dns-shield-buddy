@@ -126,6 +126,11 @@ export default function SettingsPage() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
+  // Database migration state
+  const [migrationRunning, setMigrationRunning] = useState(false);
+  const [migrationRan, setMigrationRan] = useState(() => localStorage.getItem("dnsguard-migration-002-ran") === "true");
+  const [migrationResult, setMigrationResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   // Branding state — initialise from localStorage, then override from DB
   const [brandName, setBrandName] = useState(() => getBranding().brandName);
   const [logoUrl, setLogoUrl] = useState(() => getBranding().logoUrl);
